@@ -1,0 +1,107 @@
+name: service-mcp
+
+services:
+  app:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    container_name: service-mcp-app
+    restart: unless-stopped
+    ports:
+      - "${APP_PORT:-8001}:8001"
+    environment:
+      - MCP_ENV=prod
+      - MCP_TRANSPORT=streamable-http
+      - MCP_HOST=0.0.0.0
+      - MCP_PORT=8001
+      - MCP_CONFIG_PRIORITY=env_first
+      - MCP_CACHE_ENABLED=true
+      - TZ=${TZ:-Asia/Shanghai}
+      - DB_PG_DEFAULT_HOST=db-pg-default
+      - DB_PG_DEFAULT_PORT=5432
+      - DB_PG_DEFAULT_USER=${DB_PG_DEFAULT_USER}
+      - DB_PG_DEFAULT_PASSWORD=${DB_PG_DEFAULT_PASSWORD}
+      - DB_PG_DEFAULT_DB=${DB_PG_DEFAULT_DB}
+      - CACHE_REDIS_DEFAULT_HOST=cache-redis-default
+      - CACHE_REDIS_DEFAULT_PORT=6379
+      - CACHE_REDIS_DEFAULT_PASSWORD=${CACHE_REDIS_DEFAULT_PASSWORD:-}
+      - WAIT_FOR_SERVICES=true
+    volumes:
+      - ./data/app/configs:/app/configs
+      - ./data/app/logs:/app/logs
+    depends_on:
+      db-pg-default:
+        condition: service_healthy
+      cache-redis-default:
+        condition: service_healthy
+    networks:
+      - service-mcp
+
+  db-pg-default:
+    image: postgres:${DB_PG_DEFAULT_TAG:-18.3-bookworm}
+    container_name: service-mcp-postgres
+    restart: unless-stopped
+    ports:
+      - "${DB_PG_DEFAULT_PORT:-5432}:5432"
+    environment:
+      - POSTGRES_USER=${DB_PG_DEFAULT_USER}
+      - POSTGRES_PASSWORD=${DB_PG_DEFAULT_PASSWORD}
+      - POSTGRES_DB=${DB_PG_DEFAULT_DB}
+      - TZ=${TZ:-Asia/Shanghai}
+    volumes:
+      - ./data/db-pg-default/pg_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_PG_DEFAULT_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - service-mcp
+
+  cache-redis-default:
+    image: redis:${CACHE_REDIS_DEFAULT_TAG:-8.2.5-bookworm}
+    container_name: service-mcp-redis
+    restart: unless-stopped
+    ports:
+      - "${CACHE_REDIS_DEFAULT_PORT:-6379}:6379"
+    command: >
+      redis-server
+      --appendonly yes
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+    environment:
+      - REDIS_PASSWORD=${CACHE_REDIS_DEFAULT_PASSWORD:-}
+    volumes:
+      - ./data/cache-redis-default/redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - service-mcp
+
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: service-mcp-pgadmin
+    restart: unless-stopped
+    ports:
+      - "${PGADMIN_PORT:-5050}:80"
+    environment:
+      - PGADMIN_DEFAULT_EMAIL=${PGADMIN_EMAIL:-admin@example.com}
+      - PGADMIN_DEFAULT_PASSWORD=${PGADMIN_PASSWORD:-admin}
+      - PGADMIN_CONFIG_SERVER_MODE=False
+    volumes:
+      - ./data/pgadmin/data:/var/lib/pgadmin
+    depends_on:
+      - db-pg-default
+    networks:
+      - service-mcp
+    profiles:
+      - admin
+
+networks:
+  service-mcp:
+    driver: bridge

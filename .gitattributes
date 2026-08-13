@@ -1,0 +1,19 @@
+# 确保 shell 脚本使用 LF 换行符
+*.sh text eol=lf
+*.bash text eol=lf
+
+# Docker 相关文件
+Dockerfile text eol=lf
+docker-compose*.yml text eol=lf
+compose*.yml text eol=lf
+
+# 配置文件
+*.toml text eol=lf
+*.json text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
+
+# 文本文件
+*.md text eol=lf
+*.txt text eol=lf
+*.py text eol=lf

@@ -1,0 +1,59 @@
+name: service-mcp-dev
+
+services:
+  cache-redis-default:
+    image: redis:${CACHE_REDIS_DEFAULT_TAG:-8.2.5-alpine}
+    ports:
+      - "${CACHE_REDIS_DEFAULT_PORT}:6379"
+    environment:
+      - REDIS_PASSWORD=${CACHE_REDIS_DEFAULT_PASSWORD:-}
+    volumes:
+      - ./dev_data/cache-redis-default/redis_data:/data
+      - ./dev_data/cache-redis-default/redis.conf:/usr/local/etc/redis/redis.conf
+
+  db-pg-default:
+    image: postgres:${DB_PG_DEFAULT_TAG:-18.3-alpine}
+    ports:
+      - "${DB_PG_DEFAULT_PORT}:5432"
+    environment:
+      - POSTGRES_USER=${DB_PG_DEFAULT_USER}
+      - POSTGRES_PASSWORD=${DB_PG_DEFAULT_PASSWORD}
+      - POSTGRES_DB=${DB_PG_DEFAULT_DB}
+      - TZ=${TZ:-Asia/Shanghai}
+    volumes:
+      #- ./dev_data/db-pg-default/init.sql:/docker-entrypoint-initdb.d/init.sql
+      - ./dev_data/db-pg-default/pg_data:/var/lib/postgresql/18/docker
+
+  db-mysql-default:
+    image: mysql:${DB_MYSQL_DEFAULT_TAG:-8.0}
+    ports:
+      - "${DB_MYSQL_DEFAULT_PORT}:3306"
+    environment:
+      - MYSQL_ROOT_PASSWORD=${DB_MYSQL_DEFAULT_ROOT_PASSWORD}
+      - MYSQL_USER=${DB_MYSQL_DEFAULT_USER}
+      - MYSQL_PASSWORD=${DB_MYSQL_DEFAULT_PASSWORD}
+      - MYSQL_DATABASE=${DB_MYSQL_DEFAULT_DB}
+      - TZ=${TZ:-Asia/Shanghai}
+    volumes:
+      #- ./dev_data/db-mysql-default/docker-entrypoint-initdb.d/:/docker-entrypoint-initdb.d/
+      - ./dev_data/db-mysql-default/conf:/etc/mysql/conf.d
+      - ./dev_data/db-mysql-default/data:/var/lib/mysql
+      - ./dev_data/db-mysql-default/logs:/var/log/mysql
+
+  db-influxdb-default:
+    image: influxdb:${DB_INFLUXDB_DEFAULT_TAG:-2.7}
+    ports:
+      - "${DB_INFLUXDB_DEFAULT_PORT}:8086"
+    environment:
+      DOCKER_INFLUXDB_INIT_MODE: setup
+      DOCKER_INFLUXDB_INIT_USERNAME: ${DB_INFLUXDB_DEFAULT_USERNAME}
+      DOCKER_INFLUXDB_INIT_PASSWORD: ${DB_INFLUXDB_DEFAULT_PASSWORD}
+      DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: ${DB_INFLUXDB_DEFAULT_ADMIN_TOKEN:-}
+      DOCKER_INFLUXDB_INIT_ORG: ${DB_INFLUXDB_DEFAULT_ORG}
+      DOCKER_INFLUXDB_INIT_BUCKET: ${DB_INFLUXDB_DEFAULT_BUCKET}
+    volumes:
+      - ./dev_data/db-influxdb-default/data:/var/lib/influxdb2
+      - ./dev_data/db-influxdb-default/config:/etc/influxdb2
+
+networks:
+  service-mcp-dev:
