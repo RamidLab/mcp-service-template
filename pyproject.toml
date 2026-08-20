@@ -1,6 +1,6 @@
 [project]
 name = "service-mcp"
-version = "0.1.0"
+version = "0.1.1"
 description = "A generic FastMCP server template with SQLAlchemy async CRUD"
 readme = "README.md"
 keywords = ["mcp", "template", "crud"]

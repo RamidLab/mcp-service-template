@@ -6,6 +6,16 @@
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-08-20
+
+### Added
+
+- **JWT Token 存储与自动续期**: [`AuthContext`](service_mcp/auth/context.py) 新增 `access_token` 字段，[`JWTAuthMiddleware`](service_mcp/auth/middleware.py) 支持后端返回 `new_access_token` 自动续期。
+
+### Changed
+
+- **日志抑制**: [`server.py`](service_mcp/server.py) 屏蔽 `uvicorn`、`httpx`、`httpcore`、`aiohttp` 请求日志。
+
 ## [0.1.0] - 2026-08-14
 
 ### Added
@@ -31,6 +41,7 @@
 - 初始化通用 FastMCP + SQLAlchemy CRUD 服务模板（由基金净值 MCP 服务蒸馏）：注册表驱动 CRUD、FK code 自动解析、占位自动创建、孤儿标记、动态 Filter/Search、多传输 CLI、Docker 部署、改名脚本。
 - 示例实体 Product / ProductPrice 端到端实现，演示全部核心模式（含价格冲突版本化、复合键删除）。
 
-[Unreleased]: https://github.com/RamidLab/mcp-service-template/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/RamidLab/mcp-service-template/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/RamidLab/mcp-service-template/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/RamidLab/mcp-service-template/releases/tag/v0.1.0
 [0.0.1]: https://github.com/RamidLab/mcp-service-template/releases/tag/v0.0.1

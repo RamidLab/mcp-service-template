@@ -18,6 +18,7 @@ class AuthContext:
     permissions: dict[str, PermScope] = field(default_factory=dict)
     is_superuser: bool = False
     is_staff: bool = False
+    access_token: str | None = None  # JWT token，用于调用后端 API
 
 
 _auth_context: contextvars.ContextVar[AuthContext | None] = contextvars.ContextVar(

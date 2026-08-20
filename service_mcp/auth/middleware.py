@@ -54,6 +54,14 @@ class JWTAuthMiddleware(BaseHTTPMiddleware):
             )
 
         user = data["data"]
+
+        # 如果后端返回了新 token，使用新 token 更新请求头
+        new_access_token = user.get("new_access_token")
+        if new_access_token:
+            auth_header = f"Bearer {new_access_token}"
+            # 将新 token 存储到 request.state 供后续使用
+            request.state.new_access_token = new_access_token
+
         perms = {code: PermScope(**v) for code, v in user["permissions"].items()}
         ctx = AuthContext(
             user_id=user["user_id"],
@@ -62,6 +70,7 @@ class JWTAuthMiddleware(BaseHTTPMiddleware):
             permissions=perms,
             is_superuser=user["is_superuser"],
             is_staff=user["is_staff"],
+            access_token=auth_header.replace("Bearer ", "") if auth_header else None,
         )
         token = _auth_context.set(ctx)
         try:

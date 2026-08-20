@@ -54,8 +54,14 @@ service_mcp/
 ├── server.py          # FastMCP app + Typer CLI（stdio/sse/streamable-http/ui）
 ├── config.py          # MCPSettings 分层配置（env → TOML → code），前缀 MCP_，分隔符 __
 ├── apps/              # FastMCP Apps UI（config_app：数据库/缓存配置管理面板）
-├── auth/              # JWT 认证中间件 + mcp_perm 权限装饰器 + 权限/实体发现
+├── auth/              # JWT 认证 + 权限
+│   ├── config.py      # AuthConfig（mode: tool/admin，从环境变量加载）
+│   ├── context.py     # 请求上下文（current_owner / visible_owners）
+│   ├── decorator.py   # @mcp_perm(resource, action) 权限装饰器
+│   ├── discovery.py   # get_entity_metadata / get_all_permissions（实体元数据缓存）
+│   └── middleware.py  # JWTAuthMiddleware（admin 模式时启用）
 ├── db/core.py         # DBManager（异步 SQLAlchemy CRUD/分页）+ InfluxDBManager + 管理器缓存
+├── error/exceptions.py # UniqueConflictError 等自定义异常
 ├── handlers/          # 业务逻辑层
 │   ├── base_handlers.py   # CodeResolveMixin — FK code→id 解析、占位自动创建
 │   ├── add_handlers.py    # 单条 + 批量插入（含价格冲突版本升级）
@@ -67,7 +73,7 @@ service_mcp/
 │   ├── pydantic/      # 动态 Filter/Search 生成器（builder.py）+ 实体请求/响应模型
 │   └── schemas.py     # 数据库/缓存配置 + 分页（PaginationParams/PageData）
 ├── tools/             # MCP 工具定义
-│   ├── __init__.py    # @global_tool 装饰器（配置类工具）
+│   ├── __init__.py    # @global_tool 装饰器（配置类工具，Apps UI 可跨 App 调用）
 │   ├── crud_factory.py # 注册表驱动生成 add/update/delete 工具（单条+批量）
 │   ├── crud_tools.py  # __all__ = register_crud_tools(globals()) —— 保持原样
 │   ├── query_tools.py # 列表/搜索/枚举工具
@@ -75,6 +81,8 @@ service_mcp/
 │   └── dict_tools.py  # dict_meta 实体元数据工具
 └── utils/             # enums（BaseEnum/Errcode/领域枚举）、log、path_utils、common
 ```
+
+`fastmcp.json` — FastMCP 项目配置（source: `service_mcp/server.py`，transport: streamable-http:8001）。
 
 工具自动发现机制：`server.py` 以 `FileSystemProvider(tools_dir)` 加载 `tools/` 包，
 `crud_factory` 生成的工具注入 `crud_tools` 模块命名空间后自动成为 MCP 工具。
@@ -84,9 +92,9 @@ service_mcp/
 ## 关键模式
 
 ### 工具注册
-- 工具用 `@tool`（fastmcp.tools）；配置类工具额外用 `@global_tool`（apps UI 可跨 App 调用）。
+- 工具用 `@tool`（fastmcp.tools）；配置类工具额外用 `@global_tool`（`tools/__init__.py`，apps UI 可跨 App 调用）。
 - 标签：`sys_tool`（健康检查）、`config_tool`（配置管理）、`domain_tool`（领域工具）。
-- 权限：`@mcp_perm(resource, action)` → 权限码 `SM_01{resource}{action}`。
+- 权限：`@mcp_perm(resource, action)` → 权限码 `SM_01{resource}{action}`（resource 为两位资源码，action 为两位操作码）。
 
 ### FK 解析（CodeResolveMixin）
 业务编码（如 `product_code`）自动解析为内部 ID，调用方不暴露主键。注册表：
@@ -112,12 +120,13 @@ TOML 路径由 `MCP_ENV` 决定 → `configs/config.{env}.toml`（git 忽略，�
 无配置时默认 SQLite 内存 + Redis。
 
 ### 测试约定
-- 全部测试用内存 SQLite（`sqlite+aiosqlite:///:memory:`）
+- 全部测试用内存 SQLite（`sqlite+aiosqlite:///:memory:`）；默认无需外部服务
 - `asyncio_mode = "auto"`，无需 `@pytest.mark.asyncio`
 - conftest fixtures：`handler_db`（注册到管理器缓存的 DBManager）、`seeded_product`/`seeded_price`、
   autouse 的 `clean_globals`/`clean_manager_cache`/`patch_toml_file`
 - `db_manager` fixture 参数化 sqlite/sqlite_file/mysql/postgresql（后两者需服务运行）
 - 测试模式：调用 handler.handle() → 断言 UtilResponse.code → session 查询验证入库结果
+- `pytest -k "test_name"` 可运行单个测试；`pytest tests/test_config.py` 可运行单文件
 
 ## 环境文件
 
@@ -160,3 +169,5 @@ cd docker && docker compose up -d
 - 大量 lint 规则被有意忽略（见 `[tool.ruff.lint] ignore`），不要未经确认重新启用
 - 中文注释/docstring 是项目惯例
 - `RUF001`/`RUF002`/`RUF003`（歧义 Unicode）已忽略 —— 中文全角标点是有意为之
+- `TC001`/`TC002`/`TC003`（move imports to TYPE_CHECKING）已忽略 —— pydantic 运行时需要这些导入
+- mypy 配置：`ignore_missing_imports = true`、`follow_imports = "skip"`、多模块 override 见 pyproject.toml
