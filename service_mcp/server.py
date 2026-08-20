@@ -25,8 +25,11 @@ from service_mcp.auth.discovery import (
 )
 from service_mcp.auth.middleware import JWTAuthMiddleware
 from service_mcp.config import setup_settings
-from service_mcp.utils.log import configure_logging
+from service_mcp.utils.log import configure_logging, get_logger
 from service_mcp.utils.path_utils import load_env
+
+
+logger = get_logger(__name__)
 
 
 # ── 初始化配置与日志 ──
@@ -36,6 +39,9 @@ from service_mcp.utils.path_utils import load_env
 load_env()
 fastmcp_settings.log_level = cast(LOG_LEVEL, os.getenv("FASTMCP_LOG_LEVEL", "INFO"))
 fastmcp_configure_logging(level=fastmcp_settings.log_level, logger=logging.getLogger("fastmcp"))
+# 屏蔽 uvicorn/httpx/httpcore 的请求日志
+for _name in ("uvicorn.access", "uvicorn.error", "httpx", "httpcore", "aiohttp"):
+    logging.getLogger(_name).setLevel(logging.WARNING)
 
 app_settings = setup_settings()
 _log_cfg = app_settings.logging
@@ -118,6 +124,15 @@ def streamable_http(
     port: int = typer.Option(8001, envvar="MCP_PORT"),
 ):
     """以 streamable-http 模式运行服务器"""
+    import signal as _signal
+
+    def _on_signal(signum, _frame):
+        logger.warning(f"收到信号 {signum}，正在退出...")
+        raise SystemExit(0)
+
+    _signal.signal(_signal.SIGTERM, _on_signal)
+    _signal.signal(_signal.SIGINT, _on_signal)
+
     mcp.run(transport="streamable-http", host=host, port=port, middleware=_get_http_middleware())
 
 

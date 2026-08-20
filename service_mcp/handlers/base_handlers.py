@@ -1,5 +1,5 @@
 from datetime import date
-from typing import Any
+from typing import Any, cast
 
 from sqlalchemy import DECIMAL, Date, Integer, String, func, select
 
@@ -14,6 +14,35 @@ from service_mcp.utils.enums import AbnormalType
 async def _get_mgr(db_name: str = "default"):
     """获取数据库管理器实例（快捷方式，兼容旧引用）。"""
     return await get_db_manager(db_name)
+
+
+def owner_visibility_where(model: type[Base]) -> list | None:
+    """当前身份的可见归属条件（查询叠加用）；无 owner 列或全量可见（superuser）→ None。"""
+    if not hasattr(model, "owner"):
+        return None
+    owner_col = cast(Any, model).owner  # owner 列仅存在于部分模型，Base 无此属性
+    from service_mcp.auth.context import visible_owners  # 延迟导入避免循环引用
+
+    visible = visible_owners()
+    if visible is None:
+        return None
+    return [owner_col.in_(visible)]
+
+
+def apply_owner_visibility(stmt, model: type[Base], *, prefer_own: bool = False):
+    """给定位类查询附加 owner 可见性过滤（record_id/code 定位共用）。
+
+    prefer_own=True：同名多归属时优先定位自己的（自己 > 共享池）。
+    """
+    owner_where = owner_visibility_where(model)
+    if owner_where:
+        stmt = stmt.where(*owner_where)
+        if prefer_own:
+            owner_col = cast(Any, model).owner
+            from service_mcp.auth.context import current_owner
+
+            stmt = stmt.order_by(owner_col == current_owner())
+    return stmt
 
 
 class CodeResolveMixin:

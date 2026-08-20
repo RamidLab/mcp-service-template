@@ -80,6 +80,7 @@ Thumbs.db
 configs/config.*.toml
 !configs/config.example.toml
 *logs/
+/.mimocode/
 
 # 数据库文件（本地运行时生成，不入库）
 *.db

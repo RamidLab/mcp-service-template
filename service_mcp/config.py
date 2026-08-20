@@ -100,6 +100,11 @@ class MCPSettings(BaseSettings):
 
     timezone: str = "Asia/Shanghai"
     default_currency: str = "CNY"  # 用于处理货币相关的计算和显示，默认人民币
+    encryption_key: SecretStr | None = Field(
+        default=None,
+        title="敏感字段加密密钥",
+        description="Fernet base64 密钥（Fernet.generate_key() 生成），用于加密存储密码等敏感字段",
+    )
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
 
     model_config = SettingsConfigDict(
