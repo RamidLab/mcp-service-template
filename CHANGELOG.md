@@ -4,7 +4,18 @@
 
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，并遵循 [语义化版本控制](https://semver.org/lang/zh-CN/)。
 
-## [Unreleased]
+## [0.2.0] - 2026-08-26
+
+### Added
+
+- **通用基础设施**:
+  - `utils/rate_limiter.py`: 按 key 限速器（`KeyRateLimiter` + 全局单例，随机抖动）。
+  - `utils/spill.py`: 大结果溢出（`LargeResultWriter` + `sweep_spill_dir`，原子写入 + 启动清扫）。
+  - `utils/cron.py`: 标准 5 段 cron 表达式解析（`CronExpression`）。
+  - `utils/export.py`: BOM 安全 CSV 导出助手（`csv_bom` / `rows_to_csv`）。
+  - `task/`: 通用后台任务包（`TaskManager` 生命周期管理 + `TaskScheduler` cron 调度，runner 注入式）。
+  - `tools/export_tools.py`: CSV 导出示例工具 `export_products_csv`（复用动态 Filter + `rows_to_csv`）。
+  - 新增单元测试：`test_rate_limiter.py` / `test_spill.py` / `test_cron.py` / `test_task_manager.py` / `test_export.py`。
 
 ## [0.1.1] - 2026-08-20
 

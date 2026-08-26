@@ -31,6 +31,11 @@ skeleton. Use it to bootstrap new MCP data-management services.
   lifecycle scripts (`ctl.sh` / `ctl.ps1`).
 - **Extras** — mock data generator, idempotent migration example, SQLite/MySQL/PostgreSQL/InfluxDB
   support, FastMCP Apps config UI.
+- **Generic infrastructure** — async per-key
+  rate limiter with jitter (`utils/rate_limiter.py`), large-result spill-to-file with startup
+  sweep (`utils/spill.py`), cron expression parsing (`utils/cron.py`), background task manager +
+  cron scheduler (`task/`), and a BOM-safe CSV export helper with demo tool `export_products_csv`
+  (`utils/export.py` + `tools/export_tools.py`).
 
 ## Quick start
 
@@ -77,7 +82,8 @@ service_mcp/
 │   ├── pydantic/      # dynamic Filter/Search generators + per-entity request/response models
 │   └── schemas.py     # DB/cache config schemas + pagination
 ├── tools/             # crud_factory (registry-driven), query_tools, basic_tools, dict_tools
-└── utils/             # enums, logging, path helpers
+├── task/              # generic background task manager + cron scheduler (TaskManager/TaskScheduler)
+└── utils/             # enums, logging, path helpers, rate_limiter, spill, cron, export (CSV)
 configs/               # config.example.toml skeleton (per-env TOMLs are git-ignored)
 docker/                # compose files, entrypoint, ctl.sh/ctl.ps1
 mock/                  # mock_product_data.py

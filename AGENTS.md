@@ -8,7 +8,7 @@ Product / ProductPrice，演示完整 CRUD + 外键解析 + 动态 Filter/Search
 - **Python**: 3.12+ 必须
 - **包管理器**: uv（pip 可用但 uv 为主）
 - **入口**: `service_mcp/server.py` — CLI 命令 `service-mcp`
-- **工具数量**: 约 30 个（2 个示例实体）
+- **工具数量**: 约 33 个（2 个示例实体 + CSV 导出示例）
 
 ## 快速命令
 
@@ -78,8 +78,11 @@ service_mcp/
 │   ├── crud_tools.py  # __all__ = register_crud_tools(globals()) —— 保持原样
 │   ├── query_tools.py # 列表/搜索/枚举工具
 │   ├── basic_tools.py # health、配置 CRUD、review_abnormal_items
+│   ├── export_tools.py # CSV 导出示例工具（export_products_csv）
 │   └── dict_tools.py  # dict_meta 实体元数据工具
-└── utils/             # enums（BaseEnum/Errcode/领域枚举）、log、path_utils、common
+├── task/              # 通用后台任务包（TaskManager 生命周期 + TaskScheduler cron 调度）
+└── utils/             # enums（BaseEnum/Errcode/领域枚举）、log、path_utils、common、
+                       # rate_limiter（按 key 限速）、spill（大结果溢出）、cron、export（CSV）
 ```
 
 `fastmcp.json` — FastMCP 项目配置（source: `service_mcp/server.py`，transport: streamable-http:8001）。
