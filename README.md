@@ -26,7 +26,14 @@ skeleton. Use it to bootstrap new MCP data-management services.
   the row for human review.
 - **Multi-transport CLI** — `stdio` / `sse` / `streamable-http` / `ui` (FastMCP Apps dashboard).
 - **Layered config** — env vars → TOML → code defaults (`MCP_` prefix, `MCP_ENV` selects the TOML).
-- **Auth-ready** — JWT middleware + `mcp_perm` permission decorators with permission discovery.
+- **Auth-ready** — JWT middleware + `mcp_perm` decorators with permission discovery; async-faithful
+  wrappers and admin-mode fail-closed rejection. **Three-tier data scoping**
+  (`scope_visibility_where`: platform / team / personal + publish-review gate), a
+  parent-visibility registry (`PARENT_ENTITY_MAP`) for child rows without own ownership columns
+  (orphans stay visible), and soft-deleted rows hidden from list/search by default.
+- **Typed tool UX** — `ToolAnnotations` presets (read-only / idempotent / mutating / destructive)
+  on every tool; predictable business failures raise `ToolError` and are converted to
+  `UtilResponse` business errors (never 500); batch mutations capped at `MAX_BATCH_SIZE`.
 - **Docker deployment** — compose stack (PostgreSQL 18 + Redis 8, optional pgAdmin) with
   lifecycle scripts (`ctl.sh` / `ctl.ps1`).
 - **Extras** — mock data generator, idempotent migration example, SQLite/MySQL/PostgreSQL/InfluxDB

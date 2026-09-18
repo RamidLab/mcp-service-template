@@ -17,6 +17,7 @@ from service_mcp.db.core import get_db_manager
 from service_mcp.models.common import UtilResponse
 from service_mcp.models.orm import Product
 from service_mcp.models.pydantic.filter import ProductFilter
+from service_mcp.tools.annotations import READ_ONLY
 from service_mcp.utils.enums import BaseEnum, Errcode, ProductDataSource, ProductStatus, ProductType
 from service_mcp.utils.export import rows_to_csv
 
@@ -36,6 +37,7 @@ def _label(enum_cls: type[BaseEnum], value: Any) -> Any:
     title="导出产品 CSV",
     description="按条件导出产品列表为 CSV 字符串（带 BOM，Excel 打开不乱码）",
     tags={"domain_tool"},
+    annotations=READ_ONLY,
 )
 @mcp_perm(resource="01", action="08")
 async def export_products_csv(

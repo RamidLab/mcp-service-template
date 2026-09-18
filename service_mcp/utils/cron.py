@@ -35,7 +35,8 @@ class CronExpression:
         self.month = self._parse_field(parts[3], 1, 12)
         self.weekday = self._parse_field(parts[4], 0, 6)
 
-    def _parse_field(self, field: str, min_val: int, max_val: int) -> list[int]:
+    @staticmethod
+    def _parse_field(field: str, min_val: int, max_val: int) -> list[int]:
         """解析单个 cron 字段。"""
         if field == "*":
             return list(range(min_val, max_val + 1))

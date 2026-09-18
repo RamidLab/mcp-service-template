@@ -6,6 +6,8 @@ from typing import Any
 
 from fastmcp.tools import tool
 
+from service_mcp.auth.decorator import mcp_perm
+from service_mcp.tools.annotations import READ_ONLY
 from service_mcp.utils.enums import Errcode
 
 
@@ -14,7 +16,9 @@ from service_mcp.utils.enums import Errcode
     title="获取实体元数据",
     description="自动扫描 ORM 模型，返回字段定义、枚举选项、关系图谱",
     tags={"domain_tool"},
+    annotations=READ_ONLY,
 )
+@mcp_perm(resource="07", action="08")  # 配置查看：admin 模式不裸放行实体元数据读取
 async def dict_meta(entity_type: str | None = None) -> dict[str, Any]:
     """
     获取实体元数据（自动扫描 ORM 模型）。

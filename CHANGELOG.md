@@ -4,7 +4,7 @@
 
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，并遵循 [语义化版本控制](https://semver.org/lang/zh-CN/)。
 
-## [Unreleased]
+## [0.3.0] - 2026-09-18
 
 ### Added
 
@@ -20,11 +20,22 @@
 - **ToolError 业务失败收口**: `error/exceptions.py` 新增 `ToolError`（ValueError 子类，携带业务
   `Errcode`）；`Errcode` 新增 `BUSINESS_FAILED`；handler 层定位/解析类可预期失败改为抛
   `ToolError`（继承 ValueError，兼容既有兜底断言）。
-- 新增测试：`tests/test_auth_failclosed.py` / `tests/test_scope_visibility.py`。
+- 新增测试：`tests/test_auth_failclosed.py` / `tests/test_scope_visibility.py` /
+  `tests/test_tool_error.py`。
 
+- **工具层收口与批量上限**: crud_factory 六个生成工具统一 try/except 把 `ToolError` 收口为
+  `UtilResponse` 业务响应（绝不 500 化）；批量变更工具单次最大 `MAX_BATCH_SIZE=200` 条。
+- **工具注解预设**: `tools/annotations.py`（READ_ONLY / WRITE_IDEMPOTENT / WRITE_MUTATING /
+  WRITE_DESTRUCTIVE），全面接入 CRUD 工厂与 query/dict/basic/export 工具。
 ### Changed
 
 - auth 中间件移除 `new_access_token` 死分支；`AuthContext` 新增 `team_ids` 字段。
+- cron 字段解析改静态方法；限速器单例改局部引用写入；调度器 `update_next_run` 转公开 API。
+- README / AGENTS.md 同步更新（鉴权与数据范围模式、错误收口说明）。
+
+### Fixed
+
+- `dict_meta` 补 `mcp_perm`（配置查看权限码）：admin 模式不再对实体元数据读取裸放行。
 
 ## [0.2.0] - 2026-08-26
 
@@ -74,7 +85,8 @@
 - 初始化通用 FastMCP + SQLAlchemy CRUD 服务模板（由基金净值 MCP 服务蒸馏）：注册表驱动 CRUD、FK code 自动解析、占位自动创建、孤儿标记、动态 Filter/Search、多传输 CLI、Docker 部署、改名脚本。
 - 示例实体 Product / ProductPrice 端到端实现，演示全部核心模式（含价格冲突版本化、复合键删除）。
 
-[Unreleased]: https://github.com/RamidLab/mcp-service-template/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/RamidLab/mcp-service-template/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/RamidLab/mcp-service-template/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/RamidLab/mcp-service-template/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/RamidLab/mcp-service-template/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/RamidLab/mcp-service-template/releases/tag/v0.1.0

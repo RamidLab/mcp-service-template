@@ -67,6 +67,8 @@ _global_limiter: KeyRateLimiter | None = None
 def get_rate_limiter(min_interval: float = 2.0, max_interval: float = 5.0) -> KeyRateLimiter:
     """获取或创建全局限速器单例。"""
     global _global_limiter
-    if _global_limiter is None:
-        _global_limiter = KeyRateLimiter(min_interval=min_interval, max_interval=max_interval)
-    return _global_limiter
+    limiter = _global_limiter
+    if limiter is None:
+        limiter = KeyRateLimiter(min_interval=min_interval, max_interval=max_interval)
+        _global_limiter = limiter
+    return limiter

@@ -12,6 +12,7 @@ from typing import Any
 from fastmcp.tools import tool
 from pydantic import BaseModel
 
+from service_mcp.error.exceptions import ToolError
 from service_mcp.models.common import UtilResponse
 from service_mcp.models.orm import Product, ProductPrice
 from service_mcp.models.orm.base import Base
@@ -23,6 +24,7 @@ from service_mcp.models.pydantic.product import (
     ProductPriceUpdate,
     ProductUpdate,
 )
+from service_mcp.tools.annotations import WRITE_DESTRUCTIVE, WRITE_IDEMPOTENT, WRITE_MUTATING
 
 
 def _entity(
@@ -88,6 +90,26 @@ _ENTITIES: list[dict[str, Any]] = [
 ]
 
 
+# 批量变更工具单次最大条数（防止超大请求拖垮服务，可按压测调整）
+MAX_BATCH_SIZE = 200
+
+
+def _check_batch_size(data_list: list) -> None:
+    """批量条数超上限时抛业务错误（由工具层转换层收口为失败响应）。"""
+    if len(data_list) > MAX_BATCH_SIZE:
+        raise ToolError(f"批量条数 {len(data_list)} 超过上限 {MAX_BATCH_SIZE}，请分批提交")
+
+
+def _tool_error_response(e: ToolError, data: dict[str, Any] | None = None) -> UtilResponse[Any]:
+    """ToolError → 业务失败响应（中文 message + 业务 Errcode），绝不 500 化。
+
+    转换层：handler 抛出的业务级可预期失败在此收口为 UtilResponse 返回，
+    避免落入 FastMCP 通用协议错误（500 化）。只捕获 ToolError，数据库/程序
+    错误（UniqueConflictError、DatabaseConnectionError 等）维持原路径。
+    """
+    return UtilResponse(code=e.code, message=str(e), data=data)
+
+
 def _list_of(item_cls: type[BaseModel]) -> Any:
     """构造 ``list[item_cls]`` 类型对象。
 
@@ -130,12 +152,18 @@ def _make_add_tool(ent: dict[str, Any], batch: bool) -> Any:
             title=f"批量添加{label}",
             description=f"批量添加多条{label}记录",
             tags={"domain_tool"},
+            annotations=WRITE_IDEMPOTENT,
         )
         @mcp_perm(resource=ent["resource"], action="03")
         @_annotate({"data_list": _list_of(data_cls)})
         async def _add_batch(data_list, db_name: str = "default") -> UtilResponse[dict[str, Any]]:
             """批量添加"""
-            return await AddHandler().handle_batch(model, data_list, db_name)
+            try:
+                _check_batch_size(data_list)
+                return await AddHandler().handle_batch(model, data_list, db_name)
+            except ToolError as e:
+                # 业务失败（超限/关联未找到等）→ 业务失败响应，避免 500 化
+                return _tool_error_response(e)
 
         return _add_batch
 
@@ -144,12 +172,17 @@ def _make_add_tool(ent: dict[str, Any], batch: bool) -> Any:
         title=f"添加{label}",
         description=f"添加单条{label}记录",
         tags={"domain_tool"},
+        annotations=WRITE_IDEMPOTENT,
     )
     @mcp_perm(resource=ent["resource"], action="03")
     @_annotate({"data": data_cls})
     async def _add_single(data, db_name: str = "default") -> UtilResponse[dict[str, Any]]:
         """添加单条记录"""
-        return await AddHandler().handle(model, data, db_name)
+        try:
+            return await AddHandler().handle(model, data, db_name)
+        except ToolError as e:
+            # 业务失败（如关联记录未找到等）→ 业务失败响应，避免 500 化
+            return _tool_error_response(e, data={"id": None})
 
     return _add_single
 
@@ -171,6 +204,7 @@ def _make_update_tool(ent: dict[str, Any], batch: bool) -> Any:
             title=f"批量更新{label}",
             description=f"批量更新多条{label}记录，需提供 ids 与 data_list",
             tags={"domain_tool"},
+            annotations=WRITE_MUTATING,
         )
         @mcp_perm(resource=ent["resource"], action="04")
         @_annotate({"data_list": _list_of(data_cls)})
@@ -180,7 +214,11 @@ def _make_update_tool(ent: dict[str, Any], batch: bool) -> Any:
             db_name: str = "default",
         ) -> UtilResponse[dict[str, Any]]:
             """批量更新"""
-            return await UpdateHandler().handle_batch(model, ids, data_list, db_name)
+            try:
+                _check_batch_size(data_list)
+                return await UpdateHandler().handle_batch(model, ids, data_list, db_name)
+            except ToolError as e:
+                return _tool_error_response(e)
 
         return _update_batch
 
@@ -189,6 +227,7 @@ def _make_update_tool(ent: dict[str, Any], batch: bool) -> Any:
         title=f"更新{label}",
         description=f"更新单条{label}记录，通过 record_id 定位",
         tags={"domain_tool"},
+        annotations=WRITE_MUTATING,
     )
     @mcp_perm(resource=ent["resource"], action="04")
     @_annotate({"data": data_cls})
@@ -198,7 +237,10 @@ def _make_update_tool(ent: dict[str, Any], batch: bool) -> Any:
         db_name: str = "default",
     ) -> UtilResponse[dict[str, int]]:
         """更新单条记录"""
-        return await UpdateHandler().handle(model, data, record_id, db_name)
+        try:
+            return await UpdateHandler().handle(model, data, record_id, db_name)
+        except ToolError as e:
+            return _tool_error_response(e)
 
     return _update_single
 
@@ -221,6 +263,7 @@ def _make_delete_tool(ent: dict[str, Any], batch: bool) -> Any:
             title=f"批量删除{label}",
             description=f"批量删除多条{label}记录，每条记录支持{lookup}",
             tags={"domain_tool"},
+            annotations=WRITE_DESTRUCTIVE,
         )
         @mcp_perm(resource=ent["resource"], action="06")
         @_annotate({"data_list": _list_of(data_cls)})
@@ -228,7 +271,11 @@ def _make_delete_tool(ent: dict[str, Any], batch: bool) -> Any:
             data_list, db_name: str = "default"
         ) -> UtilResponse[dict[str, Any]]:
             """批量删除"""
-            return await DeleteHandler().handle_batch(model, data_list, db_name)
+            try:
+                _check_batch_size(data_list)
+                return await DeleteHandler().handle_batch(model, data_list, db_name)
+            except ToolError as e:
+                return _tool_error_response(e)
 
         return _delete_batch
 
@@ -237,12 +284,16 @@ def _make_delete_tool(ent: dict[str, Any], batch: bool) -> Any:
         title=f"删除{label}",
         description=f"删除单条{label}记录，{lookup}",
         tags={"domain_tool"},
+        annotations=WRITE_DESTRUCTIVE,
     )
     @mcp_perm(resource=ent["resource"], action="06")
     @_annotate({"data": data_cls})
     async def _delete_single(data, db_name: str = "default") -> UtilResponse[dict[str, int]]:
         """删除单条记录"""
-        return await DeleteHandler().handle(model, data, db_name)
+        try:
+            return await DeleteHandler().handle(model, data, db_name)
+        except ToolError as e:
+            return _tool_error_response(e, data={"deleted": 0})
 
     return _delete_single
 

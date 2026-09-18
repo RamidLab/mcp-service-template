@@ -41,9 +41,9 @@ class ScheduledTask:
         self.enabled = enabled
         self.last_run: datetime | None = None
         self.next_run: datetime | None = None
-        self._update_next_run()
+        self.update_next_run()
 
-    def _update_next_run(self) -> None:
+    def update_next_run(self) -> None:
         """更新下次运行时间。"""
         try:
             self.next_run = self.cron.next_run(self.last_run)
@@ -94,7 +94,7 @@ class TaskScheduler:
         scheduled = self._scheduled_tasks.get(task_id)
         if scheduled:
             scheduled.enabled = True
-            scheduled._update_next_run()
+            scheduled.update_next_run()
             return True
         return False
 
@@ -154,7 +154,7 @@ class TaskScheduler:
                 if scheduled.next_run and now >= scheduled.next_run:
                     logger.info(f"Running scheduled task {task_id}")
                     scheduled.last_run = now
-                    scheduled._update_next_run()
+                    scheduled.update_next_run()
 
                     await self.runner(task_id)
 

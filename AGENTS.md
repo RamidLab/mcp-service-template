@@ -56,12 +56,12 @@ service_mcp/
 ├── apps/              # FastMCP Apps UI（config_app：数据库/缓存配置管理面板）
 ├── auth/              # JWT 认证 + 权限
 │   ├── config.py      # AuthConfig（mode: tool/admin，从环境变量加载）
-│   ├── context.py     # 请求上下文（current_owner / visible_owners）
+│   ├── context.py     # 请求上下文（current_owner / scope_visibility_where 三级可见性）
 │   ├── decorator.py   # @mcp_perm(resource, action) 权限装饰器
 │   ├── discovery.py   # get_entity_metadata / get_all_permissions（实体元数据缓存）
 │   └── middleware.py  # JWTAuthMiddleware（admin 模式时启用）
 ├── db/core.py         # DBManager（异步 SQLAlchemy CRUD/分页）+ InfluxDBManager + 管理器缓存
-├── error/exceptions.py # UniqueConflictError 等自定义异常
+├── error/exceptions.py # UniqueConflictError / ToolError（业务失败收口）等自定义异常
 ├── handlers/          # 业务逻辑层
 │   ├── base_handlers.py   # CodeResolveMixin — FK code→id 解析、占位自动创建
 │   ├── add_handlers.py    # 单条 + 批量插入（含价格冲突版本升级）
@@ -70,10 +70,12 @@ service_mcp/
 │   └── query_handlers.py  # 分页、外键显示展开、异常待办聚合
 ├── models/
 │   ├── orm/           # Base（id/created_at/updated_at/created_by + EnumInt）+ Product/ProductPrice
+│   │                  # + PARENT_ENTITY_MAP（父实体可见性注册表）
 │   ├── pydantic/      # 动态 Filter/Search 生成器（builder.py）+ 实体请求/响应模型
 │   └── schemas.py     # 数据库/缓存配置 + 分页（PaginationParams/PageData）
 ├── tools/             # MCP 工具定义
 │   ├── __init__.py    # @global_tool 装饰器（配置类工具，Apps UI 可跨 App 调用）
+│   ├── annotations.py # ToolAnnotations 预设（READ_ONLY / WRITE_* 四件套）
 │   ├── crud_factory.py # 注册表驱动生成 add/update/delete 工具（单条+批量）
 │   ├── crud_tools.py  # __all__ = register_crud_tools(globals()) —— 保持原样
 │   ├── query_tools.py # 列表/搜索/枚举工具
@@ -117,6 +119,19 @@ service_mcp/
 需在类定义后调用 `register_pyi_class(..., explicit=True)` 重新登记以便 stub 输出完整 class。
 修改声明后运行 `scripts/refresh_project_stub.py` 重新生成 `.pyi`（stub 只 `ruff check --fix`，不 format）。
 
+### 数据范围可见性与错误收口
+- 模型带 `data_scope/owner_id` 列 → `scope_visibility_where()` 强制三级过滤
+  （platform 全登录用户 / team 按 `ctx.team_ids` 命中 `team_id` 列 / personal 仅本人，
+  superuser 也不可越）；带 `publish_status` 列时叠加发布门槛（PENDING/REJECTED 仅归属者，
+  NULL 视为已审核）。
+- 无归属列的子表 → 在 `models/orm.PARENT_ENTITY_MAP` 登记 `(父实体, 外键列)`，查询按
+  "父实体可见"过滤，孤儿行（外键空/父不存在）豁免保持可见。
+- 带 `is_deleted` 列的模型列表/搜索默认隐藏软删行（查询层自动叠加）。
+- 业务可预期失败在 handler 内 `raise ToolError(msg, Errcode.X)`（ValueError 子类），
+  crud_factory 收口为 UtilResponse，绝不 500 化；批量工具受 `MAX_BATCH_SIZE=200` 上限保护。
+- 工具注解用 `tools/annotations.py` 预设（READ_ONLY/WRITE_IDEMPOTENT/WRITE_MUTATING/
+  WRITE_DESTRUCTIVE），新增工具按语义挂 `annotations=`。
+
 ### 配置系统
 分层：显式参数 → 环境变量 → TOML 文件。环境前缀 `MCP_`，嵌套分隔符 `__`。
 TOML 路径由 `MCP_ENV` 决定 → `configs/config.{env}.toml`（git 忽略，首次启动自动生成）。
@@ -155,7 +170,9 @@ cd docker && docker compose up -d
 
 ## 新增实体清单
 
-1. ORM 模型（继承 `Base`，唯一业务码带 `comment`，加 `abnormal` 列）→ `models/orm/__init__.py` 导出
+1. ORM 模型（继承 `Base`，唯一业务码带 `comment`，加 `abnormal` 列；需多用户隔离的加
+   `data_scope/owner_id`（可选 `team_id/publish_status`）列）→ `models/orm/__init__.py` 导出；
+   无归属列的子表在 `PARENT_ENTITY_MAP` 登记父实体与外键列
 2. Pydantic `<Entity>Base/Create/Update/Delete/Response`（Delete 继承 `BaseDeleteModel`）
 3. `filter.py` / `search.py` 声明 + `refresh_project_stub.py` 重新生成 stub
 4. handler 注册表：`_CODE_RESOLVE_MAP`、`_NAME_RESOLVE_MAP`、`_OWN_CODE_FIELDS`、

@@ -31,6 +31,7 @@ from service_mcp.models.pydantic.search import (
     ProductSearchByKeyword,
 )
 from service_mcp.models.schemas import PageData, PaginationParams
+from service_mcp.tools.annotations import READ_ONLY
 from service_mcp.utils.enums import Errcode, ProductDataSource, ProductStatus, ProductType
 
 
@@ -68,6 +69,7 @@ def _enum_options(enum_cls: type[Enum], label_fn=None) -> list[dict[str, Any]]:
     title="产品列表",
     description="分页查询产品列表，支持产品代码/名称/简称关键字模糊搜索及多字段过滤",
     tags={"domain_tool"},
+    annotations=READ_ONLY,
 )
 @mcp_perm(resource="01", action="01")
 async def get_product_list(
@@ -84,6 +86,7 @@ async def get_product_list(
     title="产品价格列表",
     description="分页查询产品价格列表，支持按产品代码/名称、日期、来源过滤",
     tags={"domain_tool"},
+    annotations=READ_ONLY,
 )
 @mcp_perm(resource="02", action="01")
 async def get_product_price_list(
@@ -105,6 +108,7 @@ async def get_product_price_list(
     title="产品关键字搜索",
     description="按关键字模糊搜索产品（匹配代码/名称/简称）",
     tags={"domain_tool"},
+    annotations=READ_ONLY,
 )
 @mcp_perm(resource="01", action="08")
 async def search_products_by_keyword(
@@ -121,6 +125,7 @@ async def search_products_by_keyword(
     title="产品字段搜索",
     description="按字段精确/模糊组合搜索产品（支持 and/or 逻辑与分组）",
     tags={"domain_tool"},
+    annotations=READ_ONLY,
 )
 @mcp_perm(resource="01", action="08")
 async def search_products_by_fields(
@@ -137,6 +142,7 @@ async def search_products_by_fields(
     title="产品价格关键字搜索",
     description="按关键字搜索产品价格（匹配产品代码/名称）",
     tags={"domain_tool"},
+    annotations=READ_ONLY,
 )
 @mcp_perm(resource="02", action="08")
 async def search_product_price_by_keyword(
@@ -153,6 +159,7 @@ async def search_product_price_by_keyword(
     title="产品价格字段搜索",
     description="按字段精确/模糊组合搜索产品价格（支持 and/or 逻辑与分组）",
     tags={"domain_tool"},
+    annotations=READ_ONLY,
 )
 @mcp_perm(resource="02", action="08")
 async def search_product_price_by_fields(
@@ -174,6 +181,7 @@ async def search_product_price_by_fields(
     title="产品枚举字典",
     description="获取产品相关的枚举字典（状态、类型、数据来源），用于前端下拉选项",
     tags={"domain_tool"},
+    annotations=READ_ONLY,
 )
 @mcp_perm(resource="01", action="01")
 async def get_product_enums() -> UtilResponse[dict[str, Any]]:
@@ -191,6 +199,7 @@ async def get_product_enums() -> UtilResponse[dict[str, Any]]:
     title="产品代码转 ID",
     description="根据产品代码查询内部记录 ID（占位记录同样可查到）",
     tags={"domain_tool"},
+    annotations=READ_ONLY,
 )
 @mcp_perm(resource="01", action="02")
 async def get_product_id_by_code(

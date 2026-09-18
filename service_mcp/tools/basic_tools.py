@@ -27,6 +27,12 @@ from service_mcp.models.schemas import (
     PaginationParams,
 )
 from service_mcp.tools import global_tool
+from service_mcp.tools.annotations import (
+    READ_ONLY,
+    WRITE_DESTRUCTIVE,
+    WRITE_IDEMPOTENT,
+    WRITE_MUTATING,
+)
 from service_mcp.utils.common import check_result
 from service_mcp.utils.enums import Errcode, NodeStatus
 
@@ -36,6 +42,7 @@ from service_mcp.utils.enums import Errcode, NodeStatus
     title="健康检查",
     description="检查MCP服务器健康状态，返回服务是否正常",
     tags={"sys_tool"},
+    annotations=READ_ONLY,
 )
 @mcp_perm(resource="07", action="08")
 async def health() -> UtilResponse[None]:
@@ -48,6 +55,7 @@ async def health() -> UtilResponse[None]:
     title="审核异常项",
     description="聚合查询所有需人工关注的异常记录（Product/ProductPrice），返回统一待办清单。可按严重程度、来源表筛选。",
     tags={"domain_tool"},
+    annotations=READ_ONLY,
 )
 @mcp_perm(resource="08", action="01")
 async def review_abnormal_items(
@@ -76,6 +84,7 @@ async def review_abnormal_items(
     title="根据标签查询工具",
     description="获取当前MCP服务器中所有带有指定标签的工具列表，返回工具名称、描述和标签信息。",
     tags={"sys_tool"},
+    annotations=READ_ONLY,
 )
 @mcp_perm(resource="07", action="08")
 async def get_tools_by_tag(tag: str, ctx: Context) -> UtilResponse[list[str]]:
@@ -100,7 +109,13 @@ async def get_tools_by_tag(tag: str, ctx: Context) -> UtilResponse[list[str]]:
 
 
 @global_tool
-@tool(name="get_all_config", title="获取所有配置", description="获取所有配置", tags={"config_tool"})
+@tool(
+    name="get_all_config",
+    title="获取所有配置",
+    description="获取所有配置",
+    tags={"config_tool"},
+    annotations=READ_ONLY,
+)
 @mcp_perm(resource="07", action="08")
 async def get_all_config(reload: bool = False) -> MCPSettings:
     """
@@ -114,7 +129,11 @@ async def get_all_config(reload: bool = False) -> MCPSettings:
 
 @global_tool
 @tool(
-    name="add_database", title="添加数据库配置", description="添加数据库配置", tags={"config_tool"}
+    name="add_database",
+    title="添加数据库配置",
+    description="添加数据库配置",
+    tags={"config_tool"},
+    annotations=WRITE_IDEMPOTENT,
 )
 @mcp_perm(resource="07", action="07")
 async def add_database(db_name: str, db_config: dict[str, Any]) -> UtilResponse[None]:
@@ -135,7 +154,13 @@ async def add_database(db_name: str, db_config: dict[str, Any]) -> UtilResponse[
 
 
 @global_tool
-@tool(name="add_cache", title="添加缓存配置", description="添加缓存配置", tags={"config_tool"})
+@tool(
+    name="add_cache",
+    title="添加缓存配置",
+    description="添加缓存配置",
+    tags={"config_tool"},
+    annotations=WRITE_IDEMPOTENT,
+)
 @mcp_perm(resource="07", action="07")
 async def add_cache(cache_name: str, cache_config: dict[str, Any]) -> UtilResponse[None]:
     """
@@ -160,6 +185,7 @@ async def add_cache(cache_name: str, cache_config: dict[str, Any]) -> UtilRespon
     title="更新数据库配置",
     description="更新数据库配置",
     tags={"config_tool"},
+    annotations=WRITE_MUTATING,
 )
 @mcp_perm(resource="07", action="07")
 async def update_database(
@@ -192,7 +218,13 @@ async def update_database(
 
 
 @global_tool
-@tool(name="update_cache", title="更新缓存配置", description="更新缓存配置", tags={"config_tool"})
+@tool(
+    name="update_cache",
+    title="更新缓存配置",
+    description="更新缓存配置",
+    tags={"config_tool"},
+    annotations=WRITE_MUTATING,
+)
 @mcp_perm(resource="07", action="07")
 async def update_cache(
     cache_name: str,
@@ -231,6 +263,7 @@ async def update_cache(
     title="删除数据库配置",
     description="删除数据库配置",
     tags={"config_tool"},
+    annotations=WRITE_DESTRUCTIVE,
 )
 @mcp_perm(resource="07", action="07")
 async def delete_database(db_name: str) -> UtilResponse[None]:
@@ -250,7 +283,13 @@ async def delete_database(db_name: str) -> UtilResponse[None]:
 
 
 @global_tool
-@tool(name="delete_cache", title="删除缓存配置", description="删除缓存配置", tags={"config_tool"})
+@tool(
+    name="delete_cache",
+    title="删除缓存配置",
+    description="删除缓存配置",
+    tags={"config_tool"},
+    annotations=WRITE_DESTRUCTIVE,
+)
 @mcp_perm(resource="07", action="07")
 async def delete_cache(cache_name: str) -> UtilResponse[None]:
     """
