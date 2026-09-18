@@ -1,11 +1,11 @@
 from string import Formatter
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import selectinload
 
 from service_mcp.db.core import DBManager
-from service_mcp.handlers.base_handlers import _get_mgr
+from service_mcp.handlers.base_handlers import _get_mgr, owner_visibility_where
 from service_mcp.models.common import UtilResponse
 from service_mcp.models.orm import Base, Product, ProductPrice
 from service_mcp.models.pydantic import BaseFilter, BaseSearchByFields, BaseSearchByKeyword
@@ -227,14 +227,30 @@ class QueryHandler:
             else:
                 raise TypeError(f"不支持的过滤器类型: {type(filter_or_search)}")
 
-        # 叠加数据范围过滤
+        # 叠加数据范围过滤（令牌级 PermScope：ALL/OWN/CUSTOM）
         scope_where = self._build_data_scope_where(model)
         if scope_where is not None:
             where = where + scope_where if where is not None else scope_where
 
+        # 归属隔离：模型带 data_scope 走三级可见性；带 owner 列走旧两态；均无则不过滤
+        owner_where = owner_visibility_where(model)
+        if owner_where:
+            where = where + owner_where if where is not None else owner_where
+
+        # 父实体可见性：无自身归属列的注册子表按"所属父实体可见"过滤（孤儿行豁免）
+        parent_where = self._parent_visibility_where(model)
+        if parent_where:
+            where = where + parent_where if where is not None else parent_where
+
         # 叠加额外条件
         if extra_where:
             where = where + extra_where if where is not None else extra_where
+
+        # 软删行默认隐藏：模型带 is_deleted 列时列表/搜索不返回已软删记录
+        # （软删即视为已删，墓碑行仅供后台清理，不应出现在任何对外查询中）
+        if hasattr(model, "is_deleted"):
+            deleted_cond = model.is_deleted.is_(False)
+            where = [*where, deleted_cond] if where is not None else [deleted_cond]
 
         # 分页查询
         page_data: PageData[dict[str, Any]] = await mgr.paginate(
@@ -250,6 +266,53 @@ class QueryHandler:
 
         final_page = PageData.create(mapped_items, params, page_data.pagination.total)
         return UtilResponse(code=Errcode.SUCCESS, message="查询成功", data=final_page)
+
+    @staticmethod
+    def _scope_visibility_where(model: type[Base]) -> list:
+        """模型级三级可见性条件（唯一来源：auth.context.scope_visibility_where）。
+
+        读取带归属列（data_scope/owner_id/publish_status）的表时一律经此取条件，
+        保证列表/富化/聚合与明细查询口径同源：
+          - 无鉴权上下文（tool 模式、后台任务）：返回空列表，即不过滤；
+          - 模型无 data_scope 列：返回空列表（调用方可再叠加旧口径）；
+          - 其余按 platform/team/personal 与 PENDING/REJECTED 规则过滤。
+        """
+        from service_mcp.auth.context import scope_visibility_where  # 延迟导入避免循环引用
+
+        return scope_visibility_where(model) or []
+
+    @classmethod
+    def _parent_visibility_where(cls, model: type[Base]) -> list:
+        """父实体可见性条件：无自身归属列的子表按"所属父实体可见"过滤。
+
+        声明见 service_mcp.models.orm 的 PARENT_ENTITY_MAP（handler 内不写实体分支，
+        新增同类子表只需在注册表登记一行）；条件来源仍是同一个可见性引擎，
+        只是作用在父实体上，与父实体列表口径完全一致。
+
+        孤儿口径：父外键为空、或父实体行已不存在时不施加父可见性约束 ——
+        孤儿行没有可保护的"父归属"，且孤儿必须保持可见才能被维护/复核。
+        """
+        if hasattr(model, "data_scope") or hasattr(model, "owner"):
+            return []  # 自身带归属列：按自身规则，不再叠加父规则
+        from service_mcp.models.orm import PARENT_ENTITY_MAP
+
+        entry = PARENT_ENTITY_MAP.get(model)
+        if entry is None:
+            return []
+        parent, fk_name = entry
+        parent_vis = cls._scope_visibility_where(parent)
+        if not parent_vis:
+            # 父实体无 data_scope 列时回落旧两态 owner 口径
+            parent_vis = owner_visibility_where(parent) or []
+        if not parent_vis:
+            return []
+
+        fk_col = getattr(model, fk_name)
+        parent_exists = select(1).where(parent.id == fk_col).correlate(model).exists()
+        parent_visible = (
+            select(1).where(parent.id == fk_col, *parent_vis).correlate(model).exists()
+        )
+        return [or_(~parent_exists, parent_visible)]
 
     @staticmethod
     def _build_data_scope_where(model: type[Base]):

@@ -2,6 +2,7 @@ from typing import Any
 
 from sqlalchemy import func, select, update
 
+from service_mcp.error.exceptions import ToolError
 from service_mcp.handlers.base_handlers import CodeResolveMixin, _get_mgr
 from service_mcp.models.common import UtilResponse
 from service_mcp.models.orm import Product, ProductPrice
@@ -99,7 +100,7 @@ class DeleteHandler(CodeResolveMixin):
         row = await mgr.fetch_one(stmt)
         if row is None:
             field_str = ", ".join(f"{f}={values[f]!r}" for f in fields)
-            raise ValueError(f"未找到 {reg['desc']}：{field_str}")
+            raise ToolError(f"未找到 {reg['desc']}：{field_str}", Errcode.RECORD_NOT_FOUND)
         return row["id"]
 
     async def _resolve_delete_target(
@@ -117,7 +118,10 @@ class DeleteHandler(CodeResolveMixin):
             stmt = select(orm_model.id).where(orm_model.id == record_id)
             row = await mgr.fetch_one(stmt)
             if row is None:
-                raise ValueError(f"{orm_model.__tablename__} 表中未找到 id={record_id} 的记录。")
+                raise ToolError(
+                    f"{orm_model.__tablename__} 表中未找到 id={record_id} 的记录。",
+                    Errcode.RECORD_NOT_FOUND,
+                )
             return record_id
 
         # ── 2. 自有编码字段（product_code）──
@@ -140,8 +144,9 @@ class DeleteHandler(CodeResolveMixin):
             stmt = select(orm_model.id, col_attr).where(col_attr == value)
             rows = await mgr.fetch_all(stmt)
             if not rows:
-                raise ValueError(
-                    f"{orm_model.__tablename__} 表中未找到 {field_name}='{value}' 的记录。"
+                raise ToolError(
+                    f"{orm_model.__tablename__} 表中未找到 {field_name}='{value}' 的记录。",
+                    Errcode.RECORD_NOT_FOUND,
                 )
             self._raise_if_multi_match(
                 field_name,
@@ -169,8 +174,9 @@ class DeleteHandler(CodeResolveMixin):
 
             rows = await mgr.fetch_all(stmt)
             if not rows:
-                raise ValueError(
-                    f"{orm_model.__tablename__} 表中未找到 {field_name}='{name}' 的记录。"
+                raise ToolError(
+                    f"{orm_model.__tablename__} 表中未找到 {field_name}='{name}' 的记录。",
+                    Errcode.RECORD_NOT_FOUND,
                 )
             self._raise_if_multi_match(
                 field_name,
@@ -183,8 +189,9 @@ class DeleteHandler(CodeResolveMixin):
             )
             return rows[0]["id"]
 
-        raise ValueError(
-            f"无法定位 {orm_model.__tablename__} 记录：请提供 record_id、编码字段或名称字段。"
+        raise ToolError(
+            f"无法定位 {orm_model.__tablename__} 记录：请提供 record_id、编码字段或名称字段。",
+            Errcode.TOOL_MISSING_REQUIRED_PARAM,
         )
 
     def _build_orphan_statements(

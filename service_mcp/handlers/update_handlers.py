@@ -3,6 +3,7 @@ from typing import Any
 
 from pydantic import BaseModel
 
+from service_mcp.error.exceptions import ToolError
 from service_mcp.handlers.base_handlers import CodeResolveMixin, _get_mgr
 from service_mcp.models.common import UtilResponse
 from service_mcp.models.orm.base import Base
@@ -96,7 +97,7 @@ class UpdateHandler(CodeResolveMixin):
                 code=Errcode.SUCCESS, message="没有需要更新的记录。", data={"count": 0}
             )
         if len(ids) != len(data_list):
-            raise ValueError(f"数量不匹配：{len(ids)} 个 ID 与 {len(data_list)} 条数据不一致。")
+            raise ToolError(f"数量不匹配：{len(ids)} 个 ID 与 {len(data_list)} 条数据不一致。")
 
         raws = [d.model_dump() for d in data_list]
         cleaned: list[dict[str, Any]] = [

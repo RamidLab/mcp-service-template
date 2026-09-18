@@ -4,11 +4,11 @@ from typing import Any, cast
 from sqlalchemy import DECIMAL, Date, Integer, String, func, select
 
 from service_mcp.db.core import get_db_manager
-from service_mcp.error.exceptions import UniqueConflictError
+from service_mcp.error.exceptions import ToolError, UniqueConflictError
 from service_mcp.models.orm import Product
 from service_mcp.models.orm.base import Base
 from service_mcp.utils.common import to_date_flexible
-from service_mcp.utils.enums import AbnormalType
+from service_mcp.utils.enums import AbnormalType, Errcode
 
 
 async def _get_mgr(db_name: str = "default"):
@@ -17,11 +17,20 @@ async def _get_mgr(db_name: str = "default"):
 
 
 def owner_visibility_where(model: type[Base]) -> list | None:
-    """当前身份的可见归属条件（查询叠加用）；无 owner 列或全量可见（superuser）→ None。"""
+    """当前身份的可见数据条件（查询叠加用）；全量可见 → None。
+
+    模型带 data_scope 列（三级数据范围）时走 scope_visibility_where
+    （平台/部门/个人 + 发布审核口径，见 auth.context）；
+    仅带 owner 列的模型回退旧两态逻辑（无鉴权/superuser 全量，普通用户仅本人）。
+    """
+    if hasattr(model, "data_scope"):
+        from service_mcp.auth.context import scope_visibility_where  # 延迟导入避免循环引用
+
+        return scope_visibility_where(model)
     if not hasattr(model, "owner"):
         return None
     owner_col = cast(Any, model).owner  # owner 列仅存在于部分模型，Base 无此属性
-    from service_mcp.auth.context import visible_owners  # 延迟导入避免循环引用
+    from service_mcp.auth.context import visible_owners
 
     visible = visible_owners()
     if visible is None:
@@ -38,10 +47,14 @@ def apply_owner_visibility(stmt, model: type[Base], *, prefer_own: bool = False)
     if owner_where:
         stmt = stmt.where(*owner_where)
         if prefer_own:
-            owner_col = cast(Any, model).owner
-            from service_mcp.auth.context import current_owner
+            # 归属列两种口径都可能：旧两态用 owner，三级范围用 owner_id
+            owner_col = getattr(model, "owner", None)
+            if owner_col is None:
+                owner_col = getattr(model, "owner_id", None)
+            if owner_col is not None:
+                from service_mcp.auth.context import current_owner
 
-            stmt = stmt.order_by(owner_col == current_owner())
+                stmt = stmt.order_by(owner_col == current_owner())
     return stmt
 
 
@@ -131,11 +144,11 @@ class CodeResolveMixin:
         format_fn: Any,
         hint: str = "请使用 record_id 明确指定",
     ) -> None:
-        """若查询到多条记录则抛出 ValueError 并列出候选项。"""
+        """若查询到多条记录则抛出 ToolError 并列出候选项。"""
         if len(rows) <= 1:
             return
         candidates = ", ".join(format_fn(r) for r in rows)
-        raise ValueError(f"{field_name}='{value}' 匹配到 {len(rows)} 条记录，{hint}: {candidates}")
+        raise ToolError(f"{field_name}='{value}' 匹配到 {len(rows)} 条记录，{hint}: {candidates}")
 
     @staticmethod
     def _merge_resolved(
@@ -348,9 +361,10 @@ class CodeResolveMixin:
                     cache = code_cache.get(code_field, {})
                     cv = code_val.strip()
                     if cv not in cache:
-                        raise ValueError(
+                        raise ToolError(
                             f"无法解析 {code_field}='{cv}'："
-                            f"在 {model.__tablename__} 中未找到匹配记录，请先创建对应的 {model.__tablename__}。"
+                            f"在 {model.__tablename__} 中未找到匹配记录，请先创建对应的 {model.__tablename__}。",
+                            Errcode.RECORD_NOT_FOUND,
                         )
                     resolved[id_field] = cache[cv]
             # 合并解析结果并剔除中间 code 字段
@@ -412,9 +426,10 @@ class CodeResolveMixin:
                     continue
                 hits = name_to_rows.get(key, [])
                 if not hits:
-                    raise ValueError(
+                    raise ToolError(
                         f"无法通过名称 '{nv}' 找到匹配的 {model.__tablename__} 记录，"
-                        f"请先创建或提供对应的 code。"
+                        f"请先创建或提供对应的 code。",
+                        Errcode.RECORD_NOT_FOUND,
                     )
                 self._raise_if_multi_match(
                     "名称",
@@ -518,7 +533,10 @@ class CodeResolveMixin:
             stmt = select(orm_model.id).where(orm_model.id == record_id)
             row = await mgr.fetch_one(stmt)
             if row is None:
-                raise ValueError(f"{orm_model.__tablename__} 表中未找到 id={record_id} 的记录。")
+                raise ToolError(
+                    f"{orm_model.__tablename__} 表中未找到 id={record_id} 的记录。",
+                    Errcode.RECORD_NOT_FOUND,
+                )
             return record_id
 
         # 尝试通过模型自身的 code 字段解析
@@ -533,12 +551,13 @@ class CodeResolveMixin:
             stmt = select(orm_model.id).where(getattr(orm_model, lookup_col) == cv.strip())
             row = await mgr.fetch_one(stmt)
             if row is None:
-                raise ValueError(
-                    f"{orm_model.__tablename__} 表中未找到 {code_field}='{cv}' 的记录。"
+                raise ToolError(
+                    f"{orm_model.__tablename__} 表中未找到 {code_field}='{cv}' 的记录。",
+                    Errcode.RECORD_NOT_FOUND,
                 )
             return row["id"]
 
-        raise ValueError(
+        raise ToolError(
             f"无法识别 {orm_model.__tablename__} 记录：请提供 `record_id` 或唯一的业务编码字段。"
         )
 

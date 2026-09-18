@@ -14,7 +14,13 @@
 - **三级数据范围可见性引擎**: `auth/context.py` 新增 `scope_visibility_where()`（平台/部门/个人
   服务端强制过滤）与 `current_team_id()`；`utils/enums.py` 新增 `DataScope`、`PublishStatus`
   （发布审核门槛：PENDING/REJECTED 仅归属者可见，NULL 视为已审核）。
-- 新增测试：`tests/test_auth_failclosed.py`。
+- **父实体可见性注册表**: `models/orm.PARENT_ENTITY_MAP` 声明（子表 → (父实体, 外键列)），
+  无自身归属列的子表查询按“父实体可见”过滤，孤儿行（外键空/父缺失）豁免保持可见。
+- **软删行默认隐藏**: 列表/搜索路径对带 `is_deleted` 列的模型自动叠加 `is_deleted == False`。
+- **ToolError 业务失败收口**: `error/exceptions.py` 新增 `ToolError`（ValueError 子类，携带业务
+  `Errcode`）；`Errcode` 新增 `BUSINESS_FAILED`；handler 层定位/解析类可预期失败改为抛
+  `ToolError`（继承 ValueError，兼容既有兜底断言）。
+- 新增测试：`tests/test_auth_failclosed.py` / `tests/test_scope_visibility.py`。
 
 ### Changed
 
