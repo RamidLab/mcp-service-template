@@ -3,12 +3,14 @@ __all__ = [
     "AuthAction",
     "AuthResource",
     "BaseEnum",
+    "DataScope",
     "EntityType",
     "Errcode",
     "NodeStatus",
     "ProductDataSource",
     "ProductStatus",
     "ProductType",
+    "PublishStatus",
 ]
 
 from enum import Enum
@@ -146,6 +148,7 @@ class Errcode(BaseEnum):
     TOOL_INVALID_PARAMS = -410002, "工具参数无效", HTTP_422_UNPROCESSABLE_CONTENT
     TOOL_MISSING_REQUIRED_PARAM = -410003, "缺少必需参数", HTTP_422_UNPROCESSABLE_CONTENT
     TOOL_EXECUTION_NOT_ALLOWED = -410004, "不允许执行该工具", HTTP_403_FORBIDDEN
+    BUSINESS_FAILED = -410005, "业务校验失败", HTTP_400_BAD_REQUEST
 
     # 服务端错误
     TOOL_EXECUTION_FAILED = -510001, "工具执行失败", HTTP_500_INTERNAL_SERVER_ERROR
@@ -278,6 +281,34 @@ class EntityType(BaseEnum):
         """从模型类名获取实体类型枚举"""
         target = model_name.lower()
         return next((m for m in cls if m.name.lower() == target), None)
+
+
+class DataScope(BaseEnum):
+    """数据范围（三级：平台 / 部门 / 个人），配合 scope_visibility_where 使用。
+
+    - platform：平台共享（存量/系统数据；发布审核通过后对全体登录用户可见）
+    - team：部门（团队）数据，team_ids 命中的成员可见
+    - personal：个人数据（仅归属者本人可见 —— 创始管理员也不可见，安全底线）
+    """
+
+    Platform = "platform", "平台"
+    Team = "team", "部门"
+    Personal = "personal", "个人"
+    _default = Platform
+
+
+class PublishStatus(BaseEnum):
+    """数据发布审核状态（针对平台数据：审核通过后才对平台公开）。
+
+    - APPROVED：已审核通过，按 data_scope 正常可见
+    - PENDING：待审核，仅归属者（owner_id）可见
+    - REJECTED：已拒绝，仅归属者可见
+    """
+
+    Pending = "PENDING", "待审核"
+    Approved = "APPROVED", "已审核"
+    Rejected = "REJECTED", "已拒绝"
+    _default = Approved
 
 
 class AbnormalType(BaseEnum):

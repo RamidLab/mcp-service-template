@@ -4,6 +4,22 @@
 
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，并遵循 [语义化版本控制](https://semver.org/lang/zh-CN/)。
 
+## [Unreleased]
+
+### Added
+
+- **鉴权加固（mcp_perm）**: async 工具装饰后 wrapper 保持 async 语义，修复协程体内读不到
+  `_current_perm_scope`（OWN 数据范围静默失效）与后台任务校验误拒问题；admin 模式下
+  AuthContext 缺失 fail-closed 拒绝，tool 模式维持无鉴权全量放行。
+- **三级数据范围可见性引擎**: `auth/context.py` 新增 `scope_visibility_where()`（平台/部门/个人
+  服务端强制过滤）与 `current_team_id()`；`utils/enums.py` 新增 `DataScope`、`PublishStatus`
+  （发布审核门槛：PENDING/REJECTED 仅归属者可见，NULL 视为已审核）。
+- 新增测试：`tests/test_auth_failclosed.py`。
+
+### Changed
+
+- auth 中间件移除 `new_access_token` 死分支；`AuthContext` 新增 `team_ids` 字段。
+
 ## [0.2.0] - 2026-08-26
 
 ### Added
@@ -52,7 +68,8 @@
 - 初始化通用 FastMCP + SQLAlchemy CRUD 服务模板（由基金净值 MCP 服务蒸馏）：注册表驱动 CRUD、FK code 自动解析、占位自动创建、孤儿标记、动态 Filter/Search、多传输 CLI、Docker 部署、改名脚本。
 - 示例实体 Product / ProductPrice 端到端实现，演示全部核心模式（含价格冲突版本化、复合键删除）。
 
-[Unreleased]: https://github.com/RamidLab/mcp-service-template/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/RamidLab/mcp-service-template/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/RamidLab/mcp-service-template/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/RamidLab/mcp-service-template/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/RamidLab/mcp-service-template/releases/tag/v0.1.0
 [0.0.1]: https://github.com/RamidLab/mcp-service-template/releases/tag/v0.0.1
