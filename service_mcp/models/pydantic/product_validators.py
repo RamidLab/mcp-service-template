@@ -41,57 +41,56 @@ def _strip_optional(v: str | None) -> str | None:
 class ProductValidators:
     """Product 模型通用字段校验器 Mixin。
 
-    提供 product_code、product_name 等字段的字符串修剪与基本非空校验。
+    提供 code、name 等字段的字符串修剪与基本非空校验。
     适用于 ProductBase / ProductCreate / ProductUpdate 等模型。
     """
 
-    @field_validator("product_code")
+    @field_validator("code")
     @classmethod
-    def _strip_product_code(cls, v: str | None) -> str | None:
-        """去除产品代码的首尾空白。None 值直接返回。"""
+    def _strip_code(cls, v: str | None) -> str | None:
+        """去除业务编码的首尾空白。None 值直接返回。"""
         if v is None:
             return v
         return v.strip()
 
-    @field_validator("product_name", "product_short_name")
+    @field_validator("name")
     @classmethod
-    def _strip_product_name(cls, v: str | None) -> str | None:
-        """去除产品名称/简称的空白，若结果为空则抛出 ValueError。"""
+    def _strip_name(cls, v: str | None) -> str | None:
+        """去除商品名称空白，若结果为空则抛出 ValueError。"""
         if v is None:
             return v
         s = v.strip()
         if not s:
-            raise ValueError("产品名称不能为空白")
+            raise ValueError("商品名称不能为空白")
         return s
+
+    @field_validator("price")
+    @classmethod
+    def _price_non_negative(cls, v: Decimal | None) -> Decimal | None:
+        """售价不能为负数（与 backend demo 校验同口径）。"""
+        if v is not None and v < 0:
+            raise ValueError(f"售价不能为负数，当前值: {v}")
+        return v
 
 
 class ProductPriceValidators:
     """ProductPrice 模型通用字段校验器 Mixin。
 
-    校验产品代码非空、单位价格为正、价格日期不晚于今天，
-    并检查累计价格与单位价格的大小关系。
+    校验商品业务编码非空、售价非负、价格日期不晚于今天。
     """
 
-    @field_validator("product_code")
+    @field_validator("code")
     @classmethod
-    def _strip_product_code(cls, v: str | None) -> str | None:
-        """去除产品代码空白，要求非空。"""
-        return _strip_required(v, "产品代码不能为空白")
+    def _strip_code(cls, v: str | None) -> str | None:
+        """去除业务编码空白，要求非空。"""
+        return _strip_required(v, "业务编码不能为空白")
 
-    @field_validator("unit_price")
+    @field_validator("price")
     @classmethod
-    def _positive_unit_price(cls, v: Decimal | None) -> Decimal | None:
-        """单位价格必须大于 0。"""
-        if v is not None and v <= 0:
-            raise ValueError(f"单位价格必须大于0，当前值: {v}")
-        return v
-
-    @field_validator("acc_price")
-    @classmethod
-    def _zero_to_none(cls, v: Decimal | None) -> Decimal | None:
-        """累计价格为 0 时视为未提供，转为 None。"""
-        if v is not None and v == Decimal(0):
-            return None
+    def _price_non_negative(cls, v: Decimal | None) -> Decimal | None:
+        """售价不能为负数。"""
+        if v is not None and v < 0:
+            raise ValueError(f"售价不能为负数，当前值: {v}")
         return v
 
     @field_validator("price_date")
@@ -101,10 +100,6 @@ class ProductPriceValidators:
         return _not_future(v, "价格日期")
 
     @model_validator(mode="after")
-    def _validate_price_consistency(self: Any) -> Any:
-        """若同时提供了累计价格与单位价格，则累计价格不得小于单位价格。"""
-        acc = self.acc_price
-        unit = self.unit_price
-        if acc is not None and unit is not None and acc < unit:
-            raise ValueError(f"累计价格 ({acc}) 不能小于单位价格 ({unit})")
+    def _validate_price_date_present(self: Any) -> Any:
+        """创建场景 price_date 与 price 必填（Update 模型两者均可选，跳过）。"""
         return self

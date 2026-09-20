@@ -213,7 +213,7 @@ class TestDBManager:
             # 验证刚才插入的行存在
             row = await db_manager.fetch_one(select(table).limit(1))
             assert row is not None
-            assert row["product_name"] == data["product_name"]
+            assert row["name"] == data["name"]
 
         elif crud_operation == "update":
             row = await db_manager.fetch_one(select(table).limit(1))

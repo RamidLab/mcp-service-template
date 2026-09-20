@@ -25,14 +25,14 @@ class AddHandler(CodeResolveMixin):
     支持单条及批量添加，并直接复用 CodeResolveMixin 提供的外键 code → id 解析和名称 → id 兜底解析。
 
     核心机制：
-        1. 识别请求数据中的业务 code 字段（如 product_code、manager_code 等），
+        1. 识别请求数据中的业务 code 字段（如 code、manager_code 等），
            通过基类方法将它们转换为对应的外键 ID。
-        2. 对于某些模型自身的 code 字段（如 Product 的 product_code），会进行唯一性校验，
+        2. 对于某些模型自身的 code 字段（如 Product 的 code），会进行唯一性校验，
            确保不会重复或与已有数据冲突。
         3. 如果没有提供 code，但提供了可读的名称字段，则通过基类方法进行名称匹配并回填对应的 ID。
 
     Note:
-        本类中的“code”泛指业务上的唯一标识字符串，不限于数据库主键，例如产品代码、机构编号等。
+        本类中的“code”泛指业务上的唯一标识字符串，不限于数据库主键，例如商品编码、机构编号等。
     """
 
     @classmethod
@@ -102,57 +102,41 @@ class AddHandler(CodeResolveMixin):
             key = {
                 k: (v if isinstance(v, str) else str(v)) if v is not None else ""
                 for k, v in raw.items()
-                if k.endswith(("_code", "_date")) and v is not None
+                if k in ("code", "name", "price_date") or k.endswith(("_code", "_date"))
+                if v is not None
             }
         return key
 
     @staticmethod
     async def _detect_price_conflict(raw: dict[str, Any], db_name: str) -> dict[str, Any]:
-        """检测价格冲突：同日同源但值不同，自动升版本并标注需人工审核。
+        """检测价格冲突：同日不同售价，自动升版本并标注需人工审核。
 
-        仅当新记录与已有记录在共同非空字段上存在数值差异时，才视为冲突。
-        若新记录只是已有记录的子集（如同一产品同一日，新记录仅有单位价格但
-        缺少累计价格，而已有记录两者皆有且单位价格一致），不触发版本升级。
+        复合唯一键为 (product_id, price_date, version)。同日已有记录且售价
+        不一致时 version+1 并标记 PriceConflict；售价完全一致则交由
+        IntegrityError 返回 UNIQUE_CONFLICT，不升版本。
         """
         mgr = await _get_mgr(db_name)
         product_id = raw.get("product_id")
         price_date = raw.get("price_date")
-        data_source = raw.get("data_source")
-        if product_id is None or price_date is None or data_source is None:
+        if product_id is None or price_date is None:
             return raw
 
         existing = await mgr.fetch_all(
             select(
-                ProductPrice.unit_price,
-                ProductPrice.acc_price,
-                ProductPrice.daily_return_rate,
+                ProductPrice.price,
                 ProductPrice.version,
             ).where(
                 ProductPrice.product_id == product_id,
                 ProductPrice.price_date == price_date,
-                ProductPrice.data_source == data_source,
             )
         )
         if not existing:
             return raw
 
-        price_fields = ("unit_price", "acc_price", "daily_return_rate")
-        new_vals = {f: raw.get(f) for f in price_fields}
-
+        new_price = raw.get("price")
         for r in existing:
             # 完全一致 → 无冲突，交由 IntegrityError 处理
-            if all(r[f] == new_vals[f] for f in price_fields):
-                return raw
-
-            # 重叠字段比较：双方都有值的字段全匹配 → 兼容，不视为冲突
-            compatible = True
-            for f in price_fields:
-                ev = r[f]
-                nv = new_vals[f]
-                if ev is not None and nv is not None and ev != nv:
-                    compatible = False
-                    break
-            if compatible:
+            if r["price"] == new_price:
                 return raw
 
         max_ver = max(r["version"] for r in existing)
@@ -299,7 +283,8 @@ class AddHandler(CodeResolveMixin):
                 key = {
                     k: (v if isinstance(v, str) else str(v)) if v is not None else ""
                     for k, v in raw.items()
-                    if k.endswith(("_code", "_date")) and v is not None
+                    if k in ("code", "name", "price_date") or k.endswith(("_code", "_date"))
+                    if v is not None
                 }
                 failures.append({"index": i, "key": key, "error": str(e)})
 

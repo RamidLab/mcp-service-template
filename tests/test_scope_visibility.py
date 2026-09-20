@@ -11,9 +11,8 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from service_mcp.auth.context import AuthContext, _auth_context
 from service_mcp.handlers.query_handlers import QueryHandler
-from service_mcp.models.orm import PARENT_ENTITY_MAP, Base
+from service_mcp.models.orm import PARENT_ENTITY_MAP, Base, Product
 from service_mcp.models.pydantic.filter import ProductFilter
-from service_mcp.models.orm import Product
 from service_mcp.models.schemas import PaginationParams
 from service_mcp.utils.enums import DataScope, PublishStatus
 

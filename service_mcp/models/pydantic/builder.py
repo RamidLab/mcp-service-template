@@ -291,8 +291,8 @@ def create_filter_class(
             本表/关联列的过滤映射。可选形式：
             - 本表列：InstrumentedAttribute 或 (InstrumentedAttribute, python_type)
             - 关联列：(relationship_attr, target_column, python_type)  三元组，自动生成 has()/any() 条件
-            例: {"code": Product.product_code} 或 {"mgr": (ProductPrice.product.name, str)}
-            或 {"product_name": (ProductPrice.product, Product.product_name, Optional[str])}
+            例: {"code": Product.code} 或 {"mgr": (ProductPrice.product.name, str)}
+            或 {"name": (ProductPrice.product, Product.name, Optional[str])}
         extra_fields: 附加的非列业务字段，如排序控制等（不参与自动条件生成）
         exclude_comparable_fields: 需要保持普通类型（非 FilterField）的字段名列表
         suppress_warnings: 是否静默处理报错的冲突
@@ -423,9 +423,9 @@ def create_search_class(
         model: ORM 模型类
         include: 参与搜索的文本列白名单（若为 None 则自动包含所有 String/Text 列）
         exclude: 黑名单（include 为 None 时生效）
-        column_mappings: 覆盖列映射表，例如 {'product_code': (Product.product_code, str)}
+        column_mappings: 覆盖列映射表，例如 {'code': (Product.code, str)}
         relation_mappings: 跨表关系搜索，例如
-            {'product_name': ('product', Product, 'product_name')}
+            {'name': ('product', Product, 'name')}
         suppress_warnings: 是否静默处理报错的冲突
     """
     column_mappings = column_mappings or {}

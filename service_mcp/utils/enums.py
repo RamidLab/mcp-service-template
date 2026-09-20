@@ -7,9 +7,7 @@ __all__ = [
     "EntityType",
     "Errcode",
     "NodeStatus",
-    "ProductDataSource",
-    "ProductStatus",
-    "ProductType",
+    "ProductCategory",
     "PublishStatus",
 ]
 
@@ -202,8 +200,8 @@ class Errcode(BaseEnum):
 class AuthResource(BaseEnum):
     """权限资源码（mcp_perm 的 resource 参数）"""
 
-    Product = "01", "产品"
-    ProductPrice = "02", "产品价格"
+    Product = "01", "商品"
+    ProductPrice = "02", "商品价格"
     Config = "07", "配置"
     Audit = "08", "审计"
 
@@ -240,41 +238,23 @@ class NodeStatus(BaseEnum):
         return cls.Unknown
 
 
-class ProductStatus(BaseEnum):
-    """产品状态枚举（示例实体）"""
+class ProductCategory(BaseEnum):
+    """商品品类（示例实体，与 backend apps/demo_module 的 ProductCategoryChoices 同口径）。
 
-    Active = 1, "正常"
-    Inactive = 2, "停用"
-    Unknown = 0, "未知"
-    _default = Unknown
+    取值与文案以 backend/前端为准，三处模板同源，改一边必须改另一边。
+    """
 
-
-class ProductType(BaseEnum):
-    """产品类型枚举（示例实体）"""
-
-    Unknown = 0, "未知"
-    Equity = 1, "权益类"
-    Bond = 2, "固收类"
-    Commodity = 3, "商品类"
-    Other = 99, "其他"
-    _default = Unknown
-
-
-class ProductDataSource(BaseEnum):
-    """产品数据来源枚举（示例实体）"""
-
-    Unknown = 0, "未知"
-    ManualImport = 1, "手动导入"
-    Api = 2, "API 同步"
-    Other = 999, "其他"
-    _default = Other
+    GOODS = 1, "实物商品"
+    VIRTUAL = 2, "虚拟商品"
+    SERVICE = 3, "服务"
+    _default = GOODS
 
 
 class EntityType(BaseEnum):
     """实体类型枚举（示例实体）"""
 
-    Product = 1, "产品"
-    ProductPrice = 2, "产品价格"
+    Product = 1, "商品"
+    ProductPrice = 2, "商品价格"
 
     @classmethod
     def from_model_name(cls, model_name: str) -> "EntityType | None":
@@ -316,7 +296,7 @@ class AbnormalType(BaseEnum):
 
     适用于所有 ORM 模型的 abnormal 字段：
       - Product: 关联记录已删除（Orphaned）、占位记录（Placeholder）
-      - ProductPrice: 关联产品已删除（Orphaned）、同日同源价格冲突需人工审核（PriceConflict）
+      - ProductPrice: 关联商品已删除（Orphaned）、同日价格冲突需人工审核（PriceConflict）
     """
 
     severity: str

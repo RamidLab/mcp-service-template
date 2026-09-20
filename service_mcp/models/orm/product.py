@@ -1,6 +1,7 @@
 __all__ = ["Product", "ProductPrice"]
 
 from datetime import date
+from decimal import Decimal
 from typing import Optional
 
 from sqlalchemy import (
@@ -11,32 +12,35 @@ from sqlalchemy import (
     Index,
     Integer,
     String,
+    Text,
     UniqueConstraint,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from service_mcp.models.orm.base import Base, EnumInt
-from service_mcp.utils.enums import AbnormalType, ProductDataSource, ProductStatus, ProductType
+from service_mcp.utils.enums import AbnormalType, ProductCategory
 
 
 class Product(Base):
-    """产品基本信息模型（示例实体：唯一业务编码 + 软删除 + 异常标记 + 占位自动创建）"""
+    """商品主数据（示例实体：唯一业务编码 + 软删除 + 异常标记 + 占位自动创建）。
+
+    字段与同族 backend/frontend 的 demo 商品契约对齐：对外业务键是 `code`，
+    不是主键；`category` 取值与 backend `ProductCategoryChoices` 同口径。
+    """
 
     __tablename__ = "product"
 
-    product_code: Mapped[str] = mapped_column(String(20), unique=True, comment="产品代码")
-    product_name: Mapped[str] = mapped_column(String(200), comment="产品名称")
-    product_short_name: Mapped[str | None] = mapped_column(String(100), comment="产品简称")
-    product_type: Mapped[ProductType | None] = mapped_column(
-        EnumInt(ProductType), default=ProductType.Unknown, comment="产品类型"
+    code: Mapped[str] = mapped_column(String(50), unique=True, comment="业务编码")
+    name: Mapped[str] = mapped_column(String(200), comment="商品名称")
+    category: Mapped[ProductCategory | int] = mapped_column(
+        EnumInt(ProductCategory), default=ProductCategory.GOODS, comment="品类"
     )
-    status: Mapped[ProductStatus | None] = mapped_column(
-        EnumInt(ProductStatus), default=ProductStatus.Unknown, comment="产品状态"
+    price: Mapped[Decimal] = mapped_column(
+        DECIMAL(12, 2), default=Decimal("0.00"), comment="售价"
     )
-    launch_date: Mapped[date | None] = mapped_column(Date, comment="成立/上市日期")
-    data_source: Mapped[ProductDataSource] = mapped_column(
-        EnumInt(ProductDataSource), default=ProductDataSource.ManualImport, comment="数据来源"
-    )
+    stock: Mapped[int] = mapped_column(Integer, default=0, comment="库存")
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, comment="是否上架")
+    remark: Mapped[str | None] = mapped_column(Text, default=None, comment="备注")
     abnormal: Mapped[AbnormalType | None] = mapped_column(
         EnumInt(AbnormalType), default=None, comment="异常标记"
     )
@@ -46,25 +50,25 @@ class Product(Base):
     prices: Mapped[list["ProductPrice"]] = relationship("ProductPrice", back_populates="product")
 
     __table_args__ = (
-        Index("idx_product_name", "product_name"),  # 按名称搜索（如 LIKE）
-        Index("idx_product_status", "status"),  # 按状态筛选
+        Index("idx_product_name", "name"),  # 按名称搜索（如 LIKE）
         Index("idx_product_is_deleted", "is_deleted"),
+        Index("idx_product_category", "category"),
+        Index("idx_product_is_active", "is_active"),
     )
 
 
 class ProductPrice(Base):
-    """产品价格模型（示例实体：复合唯一键 + 版本列 + 异常标记 + FK code 解析）"""
+    """商品价格快照（示例实体：复合唯一键 + 版本列 + 异常标记 + FK code 解析）。
+
+    对外输入用 `code`（Product.code）定位商品，handler 解析为内部 `product_id`；
+    `product_id` 不在请求/响应中对外暴露为业务键。
+    """
 
     __tablename__ = "product_price"
 
-    product_id: Mapped[int | None] = mapped_column(Integer, comment="产品ID，关联product表的ID")
+    product_id: Mapped[int | None] = mapped_column(Integer, comment="商品ID，关联product表的ID")
     price_date: Mapped[date] = mapped_column(Date, comment="价格日期")
-    unit_price: Mapped[float] = mapped_column(DECIMAL(12, 4), comment="单位价格")
-    acc_price: Mapped[float | None] = mapped_column(DECIMAL(12, 4), comment="累计价格")
-    daily_return_rate: Mapped[float | None] = mapped_column(DECIMAL(10, 4), comment="日涨跌幅")
-    data_source: Mapped[ProductDataSource] = mapped_column(
-        EnumInt(ProductDataSource), comment="数据来源"
-    )
+    price: Mapped[Decimal] = mapped_column(DECIMAL(12, 2), comment="售价")
     version: Mapped[int] = mapped_column(Integer, default=0, comment="版本号")
     abnormal: Mapped[AbnormalType | None] = mapped_column(
         EnumInt(AbnormalType), default=None, comment="异常标记"
@@ -77,9 +81,8 @@ class ProductPrice(Base):
         UniqueConstraint(
             "product_id",
             "price_date",
-            "data_source",
             "version",
-            name="uq_product_price_date_source_version",
+            name="uq_product_price_date_version",
         ),
         ForeignKeyConstraint(["product_id"], ["product.id"]),
         Index("idx_price_date", "price_date"),  # 按日期排序/筛选

@@ -6,7 +6,7 @@
 用法:
     uv run python scripts/rename_project.py my_company \\
         --project my-company-mcp --display "My Company MCP" --db my_company_data
-    uv run python scripts/rename_project.py my_company --dry-run   # 预览
+    uv run python scripts/rename_project.py my_company --write   # 预览后加 --write 落盘
 
 参数:
     NEW_PACKAGE_NAME  必需。新的 Python 包名（如 my_company，须为合法标识符）
@@ -14,10 +14,11 @@
     --display        服务显示名，默认 = 包名 Title Case
     --db             默认数据库名，默认 = --project 的下划线形式
     --perm-prefix    权限码前缀，默认保留 SM_
-    --dry-run        仅打印将执行的操作，不写入
+    --write          真正写文件；不加这个参数只打印计划（默认 dry-run）
+    --dry-run        显式声明只看计划（默认行为，可与 --write 互斥）
 
 注意:
-    - uv.lock 不参与替换，请运行 `uv sync` 重新生成
+    - uv.lock 与本脚本自身不参与替换，请运行 `uv sync` 重新生成锁文件
     - 重命名包后如提示 stub 过期，运行 `uv run python scripts/refresh_project_stub.py`
     - 只改名（不换实体）时无需改动其他内容
 """
@@ -51,8 +52,8 @@ SKIP_DIRS = {
     "node_modules",
     ".cache",
 }
-# 跳过不参与内容替换的文件
-SKIP_FILES = {"uv.lock", ".prefab_compat_version"}
+# 跳过不参与内容替换的文件：锁文件、二进制/数据文件、本脚本自身
+SKIP_FILES = {"uv.lock", ".prefab_compat_version", "rename_project.py"}
 
 IDENT_RE = re.compile(r"^[a-z_][a-z0-9_]*$")
 
@@ -64,8 +65,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--display", default=None, help="服务显示名（如 My Company MCP）")
     parser.add_argument("--db", default=None, help="默认数据库名（如 my_company_data）")
     parser.add_argument("--perm-prefix", default=None, help="权限码前缀（默认保留 SM_）")
-    parser.add_argument("--dry-run", action="store_true", help="仅预览，不写入")
-    return parser.parse_args()
+    parser.add_argument("--write", action="store_true", help="真正写入文件（缺省只打印计划）")
+    parser.add_argument("--dry-run", action="store_true", help="只打印计划（默认行为）")
+    args = parser.parse_args()
+    if args.write and args.dry_run:
+        parser.error("--write 与 --dry-run 互斥")
+    return args
 
 
 def main() -> int:
@@ -80,6 +85,7 @@ def main() -> int:
     display = args.display or package.replace("_", " ").title()
     db_name = args.db or project.replace("-", "_")
     perm_prefix = args.perm_prefix or "SM_"
+    write = args.write  # 默认 dry-run，只有 --write 才落盘
 
     # 替换表（长 token 优先，避免部分覆盖）
     replacements = [
@@ -91,9 +97,9 @@ def main() -> int:
     if args.perm_prefix is not None:
         replacements.append(("SM_", perm_prefix))
 
-    # 未提交改动检查
+    # 未提交改动检查（仅在真正写入时强制）
     git_dir = PROJECT_ROOT / ".git"
-    if git_dir.exists():
+    if write and git_dir.exists():
         import subprocess
 
         status = subprocess.run(
@@ -112,7 +118,7 @@ def main() -> int:
         return 1
 
     print(f"目标: 包名={package}  项目名={project}  显示名={display}  数据库名={db_name}")
-    print(f"权限前缀={perm_prefix}  模式={'dry-run（不写入）' if args.dry_run else '写入'}\n")
+    print(f"权限前缀={perm_prefix}  模式={'写入' if write else 'dry-run（不写入）'}\n")
 
     # 1. 内容替换
     changed_files: list[str] = []
@@ -138,17 +144,17 @@ def main() -> int:
                 new = new.replace(old, new_tok)
             if new != text:
                 changed_files.append(os.path.relpath(path, PROJECT_ROOT))
-                if not args.dry_run:
+                if write:
                     with open(path, "w", encoding="utf-8", newline="") as f:
                         f.write(new)
 
     # 2. 包目录重命名
     target_dir = PROJECT_ROOT / package
     dir_action = f"重命名目录 service_mcp/ → {package}/"
-    if args.dry_run:
+    if not write:
         print(f"  [dir ] {dir_action}")
     else:
-        if target_dir.exists():
+        if target_dir.exists() and target_dir != PACKAGE_DIR:
             print(f"✗ 目标目录 {target_dir} 已存在，中止。", file=sys.stderr)
             return 1
         if package.lower() == "service_mcp" and package != "service_mcp":
@@ -156,7 +162,7 @@ def main() -> int:
             tmp = PROJECT_ROOT / (package + ".tmp")
             PACKAGE_DIR.rename(tmp)
             tmp.rename(target_dir)
-        else:
+        elif package != "service_mcp":
             PACKAGE_DIR.rename(target_dir)
         print(f"  [dir ] {dir_action}")
 
@@ -164,7 +170,9 @@ def main() -> int:
         print(f"  [file] {rel}")
     print(f"\n共替换 {len(changed_files)} 个文件")
 
-    if not args.dry_run:
+    if not write:
+        print("\n以上为预览，未写入。确认无误后加 --write 执行。")
+    else:
         print("\n下一步:")
         print("  1. uv sync        # 重新生成 uv.lock 并安装")
         print("  2. uv run pytest  # 确认测试通过")

@@ -18,7 +18,7 @@ from service_mcp.models.common import UtilResponse
 from service_mcp.models.orm import Product
 from service_mcp.models.pydantic.filter import ProductFilter
 from service_mcp.tools.annotations import READ_ONLY
-from service_mcp.utils.enums import BaseEnum, Errcode, ProductDataSource, ProductStatus, ProductType
+from service_mcp.utils.enums import BaseEnum, Errcode, ProductCategory
 from service_mcp.utils.export import rows_to_csv
 
 
@@ -34,38 +34,38 @@ def _label(enum_cls: type[BaseEnum], value: Any) -> Any:
 
 @tool(
     name="export_products_csv",
-    title="导出产品 CSV",
-    description="按条件导出产品列表为 CSV 字符串（带 BOM，Excel 打开不乱码）",
+    title="导出商品 CSV",
+    description="按条件导出商品列表为 CSV 字符串（带 BOM，Excel 打开不乱码）",
     tags={"domain_tool"},
     annotations=READ_ONLY,
 )
 @mcp_perm(resource="01", action="08")
 async def export_products_csv(
-    product_name: str | None = None,
-    product_code: str | None = None,
-    product_type: int | None = None,
-    status: int | None = None,
+    code: str | None = None,
+    name: str | None = None,
+    category: int | None = None,
+    is_active: bool | None = None,
     db_name: str = "default",
 ) -> UtilResponse[str]:
-    """导出产品列表 CSV"""
+    """导出商品列表 CSV"""
     mgr = await get_db_manager(db_name)
 
     filters = ProductFilter(
-        product_name=product_name,
-        product_code=product_code,
-        product_type=product_type,
-        status=status,
+        code=code,
+        name=name,
+        category=category,
+        is_active=is_active,
     )
     stmt = (
         select(
             Product.id,
-            Product.product_code,
-            Product.product_name,
-            Product.product_short_name,
-            Product.product_type,
-            Product.status,
-            Product.launch_date,
-            Product.data_source,
+            Product.code,
+            Product.name,
+            Product.category,
+            Product.price,
+            Product.stock,
+            Product.is_active,
+            Product.remark,
             Product.updated_at,
         )
         .where(*filters.to_where())
@@ -76,13 +76,13 @@ async def export_products_csv(
 
     header = [
         "id",
-        "product_code",
-        "product_name",
-        "product_short_name",
-        "product_type",
-        "status",
-        "launch_date",
-        "data_source",
+        "code",
+        "name",
+        "category",
+        "price",
+        "stock",
+        "is_active",
+        "remark",
         "updated_at",
     ]
     data = []
@@ -90,13 +90,13 @@ async def export_products_csv(
         data.append(
             [
                 r["id"],
-                r["product_code"],
-                r["product_name"],
-                r.get("product_short_name") or "",
-                _label(ProductType, r["product_type"]),
-                _label(ProductStatus, r["status"]),
-                r.get("launch_date"),
-                _label(ProductDataSource, r["data_source"]),
+                r["code"],
+                r["name"],
+                _label(ProductCategory, r["category"]),
+                r["price"],
+                r["stock"],
+                r["is_active"],
+                r.get("remark") or "",
                 r.get("updated_at"),
             ]
         )

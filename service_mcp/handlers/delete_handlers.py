@@ -17,10 +17,10 @@ class DeleteHandler(CodeResolveMixin):
 
     支持通过多种方式定位待删除记录：
         1. record_id — 直接主键
-        2. 自有编码字段（product_code）— 唯一业务编码
+        2. 自有编码字段（code）— 唯一业务编码
         3. 额外编码字段 — 按实体注册（_DELETE_EXTRA_CODE）
-        4. 复合字段（product_code + price_date 等）— 联合唯一键
-        5. 名称字段（product_name 等）— 含同名检测
+        4. 复合字段（code + price_date 等）— 联合唯一键
+        5. 名称字段（name 等）— 含同名检测
 
     名称查找时若匹配到多条记录，会列出所有候选项的编码与 ID，
     供调用方添加编码字段以消除歧义。
@@ -35,20 +35,20 @@ class DeleteHandler(CodeResolveMixin):
 
     # 名称查找：ORM 模型 → [(pydantic 字段名, ORM 名称列属性, ORM 编码列属性)]
     _DELETE_NAME_LOOKUP: dict[type[Base], list] = {
-        Product: [("product_name", Product.product_name, Product.product_code)],
+        Product: [("name", Product.name, Product.code)],
     }
 
     # 复合外键定位注册表：ORM 模型 → (复合字段名列表, WHERE 条件构建器)
-    # 复合字段中含 product_code 的会自动解析为 product_id
+    # 复合字段中含 code 的会自动解析为 product_id
     _COMPOUND_TARGET_REGISTRY: dict[type[Base], dict[str, Any]] = {
         ProductPrice: {
-            "fields": ["product_code", "price_date"],
+            "fields": ["code", "price_date"],
             "desc": "价格记录",
             "where": lambda fd, d: [
                 ProductPrice.product_id == fd.get("product_id"),
                 ProductPrice.price_date == d["price_date"],
             ],
-            "fk_fields": ["product_code"],
+            "fk_fields": ["code"],
         },
     }
 
@@ -124,7 +124,7 @@ class DeleteHandler(CodeResolveMixin):
                 )
             return record_id
 
-        # ── 2. 自有编码字段（product_code）──
+        # ── 2. 自有编码字段（code）──
         own = self._OWN_CODE_FIELDS.get(orm_model, set())
         for code_field, (_, _model, lookup_col) in self._CODE_RESOLVE_MAP.items():
             if code_field not in own:
@@ -230,10 +230,10 @@ class DeleteHandler(CodeResolveMixin):
 
         定位优先级：
             1. record_id
-            2. 自有编码字段（如 product_code）
+            2. 自有编码字段（如 code）
             3. 额外编码字段
-            4. 复合字段（如 product_code + price_date）
-            5. 名称字段（如 product_name），同名时报错并列出候选项
+            4. 复合字段（如 code + price_date）
+            5. 名称字段（如 name），同名时报错并列出候选项
 
         Args:
             orm_model: 目标 ORM 模型类。

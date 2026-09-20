@@ -6,18 +6,18 @@ from service_mcp.models.pydantic import BaseFilter
 class ProductFilter(BaseFilter):
     def to_where(self) -> list[ColumnElement[bool]]: ...
     abnormal: Any = None
+    category: Any = None
+    code: Any = None
     created_at: Any = None
     created_by: Any = None
-    data_source: Any = None
+    is_active: Any = None
     keyword: Any = None
-    launch_date: Any = None
-    product_code: Any = None
-    product_name: Any = None
-    product_short_name: Any = None
-    product_type: Any = None
+    name: Any = None
+    price: Any = None
+    remark: Any = None
     sort_by: Any = None
     sort_order: Any = None
-    status: Any = None
+    stock: Any = None
     updated_at: Any = None
 
 ProductPriceFilter: type[BaseFilter]

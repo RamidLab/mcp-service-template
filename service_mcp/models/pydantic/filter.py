@@ -20,14 +20,15 @@ _ProductFilterBase = create_filter_class(
             Field(
                 default=None,
                 title="关键字搜索",
-                description="模糊匹配产品代码、名称、简称",
+                description="模糊匹配业务编码、商品名称",
             ),
         ),
         "sort_by": (
             Literal[
-                "product_code",
-                "product_name",
-                "launch_date",
+                "code",
+                "name",
+                "price",
+                "stock",
                 "created_at",
                 "updated_at",
             ]
@@ -56,9 +57,8 @@ class ProductFilter(_ProductFilterBase):
             pattern = f"%{kw}%"
             conditions.append(
                 or_(
-                    Product.product_code.like(pattern),
-                    Product.product_name.like(pattern),
-                    Product.product_short_name.like(pattern),
+                    Product.code.like(pattern),
+                    Product.name.like(pattern),
                 )
             )
         return conditions
@@ -73,14 +73,14 @@ ProductPriceFilter = create_filter_class(
     model=ProductPrice,
     exclude=["id", "product_id", "version"],
     column_mappings={
-        "product_code": (ProductPrice.product, Product.product_code, str | None),
-        "product_name": (ProductPrice.product, Product.product_name, str | None),
+        "code": (ProductPrice.product, Product.code, str | None),
+        "name": (ProductPrice.product, Product.name, str | None),
     },
     extra_fields={
         "sort_by": (
             Literal[
                 "price_date",
-                "unit_price",
+                "price",
                 "created_at",
                 "updated_at",
             ]

@@ -415,7 +415,7 @@ class DBManager(RdbmsDBManager):
             model: SQLAlchemy ORM 模型（如 Product）
             params: 分页参数（page, page_size）
             where: 可选的过滤条件列表（如 Product.status == 1）
-            order_by: 可选的排序字段列表（如 Product.launch_date.desc()）
+            order_by: 可选的排序字段列表（如 Product.price.desc()）
 
         Returns:
             PageData 对象，包含分页数据和总数

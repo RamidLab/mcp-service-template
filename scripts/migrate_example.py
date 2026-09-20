@@ -33,13 +33,13 @@ DEFAULT_URL = f"sqlite+aiosqlite:///{Path(__file__).resolve().parent.parent / 's
 
 CREATE_PRODUCT = """CREATE TABLE product (
     id INTEGER PRIMARY KEY,
-    product_code VARCHAR(20) UNIQUE NOT NULL,
-    product_name VARCHAR(200) NOT NULL,
-    product_short_name VARCHAR(100),
-    product_type INTEGER DEFAULT 0,
-    status INTEGER DEFAULT 0,
-    launch_date DATE,
-    data_source INTEGER DEFAULT 1,
+    code VARCHAR(50) UNIQUE NOT NULL,
+    name VARCHAR(200) NOT NULL,
+    category INTEGER DEFAULT 1,
+    price DECIMAL(12, 2) DEFAULT 0,
+    stock INTEGER DEFAULT 0,
+    is_active BOOLEAN DEFAULT TRUE,
+    remark TEXT,
     abnormal INTEGER,
     is_deleted BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -48,7 +48,7 @@ CREATE_PRODUCT = """CREATE TABLE product (
 
 # 需要补充到 product 表的新列（"schema 演进"场景：首次部署后加列）
 PRODUCT_NEW_COLUMNS = [
-    ("launch_date", "DATE"),
+    ("remark", "TEXT"),
     ("is_deleted", "BOOLEAN DEFAULT FALSE"),
 ]
 

@@ -47,7 +47,7 @@ class QueryHandler:
         type[Base], dict[str, tuple[type[Base], list[str | tuple[str, str]]]]
     ] = {
         ProductPrice: {
-            "product_id": (Product, ["product_name", "product_code"]),
+            "product_id": (Product, ["name", "code"]),
         },
     }
 
@@ -345,8 +345,8 @@ class QueryHandler:
 
     @staticmethod
     def _make_product_label(row: dict[str, Any]) -> str:
-        name = row.get("product_name") or "?"
-        code = row.get("product_code") or "?"
+        name = row.get("name") or "?"
+        code = row.get("code") or "?"
         return f"「{name}」(code={code})"
 
     @staticmethod
@@ -381,8 +381,8 @@ class QueryHandler:
     ) -> list[dict[str, Any]]:
         stmt = select(
             Product.id,
-            Product.product_code,
-            Product.product_name,
+            Product.code,
+            Product.name,
             Product.abnormal,
             Product.created_at,
         ).where(Product.abnormal.isnot(None))
@@ -396,11 +396,11 @@ class QueryHandler:
                 self._build_abnormal_item(
                     source_table="product",
                     row=r,
-                    summary=f"产品「{r['product_name']}」(code={r['product_code']})：{at.label}",
+                    summary=f"商品「{r['name']}」(code={r['code']})：{at.label}",
                     severity=at.severity,
                     enum_type=AbnormalType,
                     enum_value=int(at),
-                    context={"product_code": r["product_code"], "product_name": r["product_name"]},
+                    context={"code": r["code"], "name": r["name"]},
                 )
             )
         return items
@@ -424,7 +424,7 @@ class QueryHandler:
             summary_tpl: 摘要模板，支持 {product_label}、{at_label} 及 row 中的字段名
             context_keys: 从 row 中提取到 context 的字段名列表
         """
-        product_cols = [Product.product_code, Product.product_name]
+        product_cols = [Product.code, Product.name]
         t = model.__table__
         product_id_col = t.c.product_id
         abnormal_col = t.c.abnormal
@@ -494,7 +494,7 @@ class QueryHandler:
                     s,
                     ProductPrice,
                     "product_price",
-                    summary_tpl="产品{product_label} 价格{at_label}（日期={price_date}, 版本=v{version}）",
+                    summary_tpl="商品{product_label} 价格{at_label}（日期={price_date}, 版本=v{version}）",
                     context_keys=["price_date", "version"],
                 ),
             ),

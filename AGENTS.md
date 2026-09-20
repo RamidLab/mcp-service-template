@@ -4,6 +4,7 @@
 
 通用 MCP 服务模板（FastMCP + SQLAlchemy async + Pydantic v2 + Typer CLI），含示例实体
 Product / ProductPrice，演示完整 CRUD + 外键解析 + 动态 Filter/Search 链路。
+示例域字段与同族 `backend/apps/demo_module`、`frontend` demo 商品契约对齐。
 
 - **Python**: 3.12+ 必须
 - **包管理器**: uv（pip 可用但 uv 为主）
@@ -43,8 +44,9 @@ uv run python mock/mock_product_data.py
 uv run python scripts/migrate_example.py
 uv run python scripts/migrate_example.py --url sqlite+aiosqlite:///path/to/service_data.db
 
-# 项目改名（模板 → 新项目）
+# 项目改名（模板 → 新项目；默认 dry-run 预览，加 --write 才落盘）
 uv run python scripts/rename_project.py my_company --project my-company-mcp --display "My Company MCP"
+uv run python scripts/rename_project.py my_company --project my-company-mcp --write
 ```
 
 ## 架构
@@ -59,7 +61,7 @@ service_mcp/
 │   ├── context.py     # 请求上下文（current_owner / scope_visibility_where 三级可见性）
 │   ├── decorator.py   # @mcp_perm(resource, action) 权限装饰器
 │   ├── discovery.py   # get_entity_metadata / get_all_permissions（实体元数据缓存）
-│   └── middleware.py  # JWTAuthMiddleware（admin 模式时启用）
+│   └── middleware.py  # JWTAuthMiddleware（admin 模式时启用，server.py 挂载）
 ├── db/core.py         # DBManager（异步 SQLAlchemy CRUD/分页）+ InfluxDBManager + 管理器缓存
 ├── error/exceptions.py # UniqueConflictError / ToolError（业务失败收口）等自定义异常
 ├── handlers/          # 业务逻辑层
@@ -91,8 +93,18 @@ service_mcp/
 
 工具自动发现机制：`server.py` 以 `FileSystemProvider(tools_dir)` 加载 `tools/` 包，
 `crud_factory` 生成的工具注入 `crud_tools` 模块命名空间后自动成为 MCP 工具。
-**注意：本模板没有 `middleware.py`，也没有 `add_tools.py`/`update_tools.py`/`delete_tools.py`**
-（增删改工具由 `crud_factory.py` 动态生成）。
+**注意：增删改工具没有独立的 `add_tools.py`/`update_tools.py`/`delete_tools.py`**
+（由 `crud_factory.py` 动态生成）；`auth/middleware.py` 存在，admin 模式时由 `server.py` 挂载。
+
+## 示例域契约（与 backend/frontend 对齐）
+
+| 实体 | 字段 |
+|---|---|
+| Product | `code`（唯一业务编码）、`name`、`category`（1 实物商品 / 2 虚拟商品 / 3 服务）、`price`、`stock`、`is_active`、`remark`；MCP 教学列：`abnormal`、`is_deleted` |
+| ProductPrice | 对外 `code`（= Product.code，FK 解析）、`price_date`、`price`；内部 `product_id`；教学列：`version`、`abnormal`；复合唯一键 `(product_id, price_date, version)` |
+
+品类取值与文案以 backend `apps/demo_module/models.py` 的 `ProductCategoryChoices` 为准，
+三处模板同源，改一边必须改另一边。
 
 ## 关键模式
 
@@ -102,7 +114,7 @@ service_mcp/
 - 权限：`@mcp_perm(resource, action)` → 权限码 `SM_01{resource}{action}`（resource 为两位资源码，action 为两位操作码）。
 
 ### FK 解析（CodeResolveMixin）
-业务编码（如 `product_code`）自动解析为内部 ID，调用方不暴露主键。注册表：
+业务编码（如 `code`）自动解析为内部 ID，调用方不暴露主键。注册表：
 - `_CODE_RESOLVE_MAP`：code 字段 → (id 字段, 参照模型, 查询列)
 - `_NAME_RESOLVE_MAP`：名称字段 → 按名称兜底解析（示例为空）
 - `_OWN_CODE_FIELDS`：模型自身的唯一编码字段（不参与 FK 解析，参与唯一性校验）
@@ -110,7 +122,7 @@ service_mcp/
 
 ### 删除与孤儿标记
 - `_DELETE_NAME_LOOKUP`：名称定位（同名报错列出候选项）
-- `_COMPOUND_TARGET_REGISTRY`：复合键定位（如 `product_code + price_date`）
+- `_COMPOUND_TARGET_REGISTRY`：复合键定位（如 `code + price_date`）
 - `_ORPHAN_REGISTRY`：父模型 → [(子模型, 外键列)]，删除父记录时子记录标记 `abnormal=Orphaned`
 
 ### 动态 Filter/Search
@@ -191,3 +203,5 @@ cd docker && docker compose up -d
 - `RUF001`/`RUF002`/`RUF003`（歧义 Unicode）已忽略 —— 中文全角标点是有意为之
 - `TC001`/`TC002`/`TC003`（move imports to TYPE_CHECKING）已忽略 —— pydantic 运行时需要这些导入
 - mypy 配置：`ignore_missing_imports = true`、`follow_imports = "skip"`、多模块 override 见 pyproject.toml
+- **禁止用 PowerShell 批量替换文件**（毁中文编码），批量改动用文件工具逐文件处理
+- 代码注释与提交信息不得出现版本号与阶段标识

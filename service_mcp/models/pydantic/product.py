@@ -21,7 +21,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from service_mcp.models.pydantic import BaseDeleteModel
 from service_mcp.models.pydantic.product_validators import ProductPriceValidators, ProductValidators
-from service_mcp.utils.enums import AbnormalType, ProductDataSource, ProductStatus, ProductType
+from service_mcp.utils.enums import AbnormalType, ProductCategory
 
 
 # ================================================================
@@ -30,15 +30,15 @@ from service_mcp.utils.enums import AbnormalType, ProductDataSource, ProductStat
 
 
 class ProductBase(ProductValidators, BaseModel):
-    """产品基本信息（示例实体）"""
+    """商品基本信息（示例实体，与 backend/frontend demo 契约对齐）"""
 
-    product_code: str = Field(..., title="产品代码", max_length=20)
-    product_name: str = Field(..., title="产品名称", max_length=200)
-    product_short_name: str | None = Field(default=None, title="产品简称", max_length=100)
-    product_type: ProductType | None = Field(default=ProductType.Unknown, title="产品类型")
-    status: ProductStatus | None = Field(default=ProductStatus.Unknown, title="产品状态")
-    launch_date: str | None = Field(default=None, title="成立/上市日期")
-    data_source: ProductDataSource = Field(default=ProductDataSource.ManualImport, title="数据来源")
+    code: str = Field(..., title="业务编码", max_length=50)
+    name: str = Field(..., title="商品名称", max_length=200)
+    category: ProductCategory = Field(default=ProductCategory.GOODS, title="品类")
+    price: Decimal = Field(default=Decimal("0.00"), max_digits=12, decimal_places=2, title="售价")
+    stock: int = Field(default=0, ge=0, title="库存")
+    is_active: bool = Field(default=True, title="是否上架")
+    remark: str | None = Field(default=None, title="备注")
 
 
 class ProductCreate(ProductBase):
@@ -46,33 +46,35 @@ class ProductCreate(ProductBase):
 
 
 class ProductUpdate(ProductValidators, BaseModel):
-    """更新产品 — 全部字段可选，None 字段不更新"""
+    """更新商品 — 全部字段可选，None 字段不更新。`code` 是对外契约，创建后不可改。"""
 
-    product_code: str | None = Field(default=None, max_length=20, description="产品代码")
-    product_name: str | None = Field(default=None, max_length=200, description="产品名称")
-    product_short_name: str | None = Field(default=None, max_length=100, description="产品简称")
-    product_type: ProductType | None = Field(default=None, description="产品类型")
-    status: ProductStatus | None = Field(default=None, description="产品状态")
-    launch_date: str | None = Field(default=None, description="成立/上市日期")
-    data_source: ProductDataSource | None = Field(default=None, description="数据来源")
+    code: str | None = Field(default=None, max_length=50, description="业务编码（定位用，不改值）")
+    name: str | None = Field(default=None, max_length=200, description="商品名称")
+    category: ProductCategory | None = Field(default=None, description="品类")
+    price: Decimal | None = Field(
+        default=None, max_digits=12, decimal_places=2, description="售价"
+    )
+    stock: int | None = Field(default=None, ge=0, description="库存")
+    is_active: bool | None = Field(default=None, description="是否上架")
+    remark: str | None = Field(default=None, description="备注")
 
 
 class ProductDelete(BaseDeleteModel):
-    """删除产品 — 通过 record_id、product_code 或 product_name 定位记录"""
+    """删除商品 — 通过 record_id、code 或 name 定位记录"""
 
-    product_code: str | None = Field(default=None, max_length=20, description="产品代码")
-    product_name: str | None = Field(default=None, max_length=200, description="产品名称")
+    code: str | None = Field(default=None, max_length=50, description="业务编码")
+    name: str | None = Field(default=None, max_length=200, description="商品名称")
 
-    @field_validator("product_code", "product_name")
+    @field_validator("code", "name")
     @classmethod
     def _strip_lookup(cls, v: str | None) -> str | None:
         return super()._strip_lookup(v)
 
     @model_validator(mode="after")
     def _validate_delete_lookup(self) -> ProductDelete:
-        if self.record_id is None and self.product_code is None and self.product_name is None:
+        if self.record_id is None and self.code is None and self.name is None:
             raise ValueError(
-                "至少需要提供 record_id、product_code 或 product_name 之一来定位要删除的记录"
+                "至少需要提供 record_id、code 或 name 之一来定位要删除的记录"
             )
         return self
 
@@ -82,6 +84,7 @@ class ProductResponse(ProductBase):
     created_at: datetime
     updated_at: datetime
     abnormal: AbnormalType | None = None
+    is_deleted: bool = False
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -92,51 +95,40 @@ class ProductResponse(ProductBase):
 
 
 class ProductPriceBase(ProductPriceValidators, BaseModel):
-    """产品价格信息（示例实体：FK code 解析 + 复合唯一键演示）"""
+    """商品价格快照（示例实体：FK code 解析 + 复合唯一键演示）"""
 
-    product_code: str = Field(..., max_length=20, description="产品代码")
+    code: str = Field(..., max_length=50, description="商品业务编码（解析为内部 product_id）")
     price_date: str = Field(..., description="价格日期")
-    unit_price: Decimal = Field(..., max_digits=12, decimal_places=4, description="单位价格")
-    acc_price: Decimal | None = Field(None, max_digits=12, decimal_places=4, description="累计价格")
-    daily_return_rate: Decimal | None = Field(
-        None, max_digits=10, decimal_places=4, description="日涨跌幅"
-    )
-    data_source: ProductDataSource = Field(..., description="数据来源")
+    price: Decimal = Field(..., max_digits=12, decimal_places=2, description="售价")
 
 
 class ProductPriceCreate(ProductPriceBase):
+    # extra=allow：占位自动创建时可透传 Product 列（如 name）作为占位商品名称
     model_config = ConfigDict(extra="allow")
 
 
 class ProductPriceUpdate(ProductPriceValidators, BaseModel):
-    product_code: str | None = Field(None, max_length=20, description="产品代码")
+    code: str | None = Field(None, max_length=50, description="商品业务编码")
     price_date: str | None = Field(None, description="价格日期")
-    unit_price: Decimal | None = Field(
-        None, max_digits=12, decimal_places=4, description="单位价格"
-    )
-    acc_price: Decimal | None = Field(None, max_digits=12, decimal_places=4, description="累计价格")
-    daily_return_rate: Decimal | None = Field(
-        None, max_digits=10, decimal_places=4, description="日涨跌幅"
-    )
-    data_source: ProductDataSource | None = Field(None, description="数据来源")
+    price: Decimal | None = Field(None, max_digits=12, decimal_places=2, description="售价")
 
 
 class ProductPriceDelete(BaseDeleteModel):
-    """删除产品价格 — 通过 record_id，或 product_code + price_date 定位记录"""
+    """删除商品价格 — 通过 record_id，或 code + price_date 定位记录"""
 
-    product_code: str | None = Field(default=None, max_length=20, description="产品代码")
+    code: str | None = Field(default=None, max_length=50, description="商品业务编码")
     price_date: str | None = Field(default=None, description="价格日期")
 
-    @field_validator("product_code")
+    @field_validator("code")
     @classmethod
     def _strip_lookup(cls, v: str | None) -> str | None:
         return super()._strip_lookup(v)
 
     @model_validator(mode="after")
     def _validate_delete_lookup(self) -> ProductPriceDelete:
-        if self.record_id is None and (self.product_code is None or self.price_date is None):
+        if self.record_id is None and (self.code is None or self.price_date is None):
             raise ValueError(
-                "至少需要提供 record_id，或同时提供 product_code 和 price_date 来定位要删除的记录"
+                "至少需要提供 record_id，或同时提供 code 和 price_date 来定位要删除的记录"
             )
         return self
 

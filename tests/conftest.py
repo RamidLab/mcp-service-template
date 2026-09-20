@@ -1,6 +1,7 @@
 import os
 from collections.abc import AsyncGenerator
 from datetime import date
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
@@ -12,7 +13,7 @@ from service_mcp.config import MCPSettings
 from service_mcp.db.core import DBManager, _manager_cache  # noqa
 from service_mcp.models.common import UtilResponse
 from service_mcp.models.orm import Product, ProductPrice
-from service_mcp.utils.enums import ProductDataSource, ProductStatus, ProductType
+from service_mcp.utils.enums import ProductCategory
 
 
 HANDLER_DB_NAME = "handler_test"
@@ -29,7 +30,7 @@ def response_data(resp: UtilResponse) -> Any:
 
 
 async def fetch_product_or_none(handler_db: DBManager, product_id: int) -> Product | None:
-    """按 ID 查询产品，可能不存在（返回 None）。"""
+    """按 ID 查询商品，可能不存在（返回 None）。"""
     async with handler_db.get_session() as session:
         return (
             (await session.execute(select(Product).where(Product.id == product_id)))
@@ -39,7 +40,7 @@ async def fetch_product_or_none(handler_db: DBManager, product_id: int) -> Produ
 
 
 async def fetch_product(handler_db: DBManager, product_id: int) -> Product:
-    """按 ID 查询产品，断言存在后返回（消除 Optional 成员访问警告）。"""
+    """按 ID 查询商品，断言存在后返回（消除 Optional 成员访问警告）。"""
     obj = await fetch_product_or_none(handler_db, product_id)
     assert obj is not None
     return obj
@@ -109,10 +110,19 @@ def db_urls(tmp_path) -> dict[str, str]:
 
 @pytest.fixture(params=["sqlite", "sqlite_file", "mysql", "postgresql"])
 async def db_manager(request, db_urls: dict[str, str]) -> AsyncGenerator["DBManager", None]:
-    """数据库管理器 fixture，默认只使用 SQLite 内存数据库。"""
+    """数据库管理器 fixture，默认使用 SQLite；外部库不可达时自动 skip。
+
+    家族约定：测试零外部服务可跑（CI 不需要 Postgres/MySQL/InfluxDB）。
+    mysql/postgresql 参数化用例在服务未运行时 skip，而不是 error。
+    """
     db_name = request.param
     mgr = DBManager(db_urls[db_name])
-    await mgr.connect()
+    try:
+        await mgr.connect()
+    except Exception as e:
+        if db_name in ("mysql", "postgresql"):
+            pytest.skip(f"{db_name} 不可用，跳过外部数据库用例: {e}")
+        raise
     # SQLite 默认不强制外键约束，通过事件监听器在每个连接上开启
     url = db_urls[db_name]
     if url.startswith("sqlite"):
@@ -123,7 +133,12 @@ async def db_manager(request, db_urls: dict[str, str]) -> AsyncGenerator["DBMana
             cursor.execute("PRAGMA foreign_keys = ON")
             cursor.close()
 
-    await mgr.create_all()
+    try:
+        await mgr.create_all()
+    except Exception as e:
+        if db_name in ("mysql", "postgresql"):
+            pytest.skip(f"{db_name} 不可用，跳过外部数据库用例: {e}")
+        raise
     yield mgr
     await mgr.drop_all()
     await mgr.disconnect()
@@ -166,15 +181,15 @@ async def handler_db() -> AsyncGenerator[DBManager, None]:
 
 @pytest.fixture
 async def seeded_product(handler_db: DBManager) -> Product:
-    """预置一条 Product 记录。"""
+    """预置一条 Product 记录（字段与 backend/frontend demo 商品契约同口径）。"""
     obj = Product(
-        product_code="P0001",
-        product_name="测试产品",
-        product_short_name="测试",
-        product_type=ProductType.Equity,
-        status=ProductStatus.Active,
-        launch_date=date(2024, 1, 1),
-        data_source=ProductDataSource.ManualImport,
+        code="P0001",
+        name="测试商品",
+        category=ProductCategory.GOODS,
+        price=Decimal("99.00"),
+        stock=10,
+        is_active=True,
+        remark="测试备注",
     )
     return await handler_db.insert(obj)
 
@@ -185,10 +200,7 @@ async def seeded_price(handler_db: DBManager, seeded_product: Product) -> Produc
     obj = ProductPrice(
         product_id=seeded_product.id,
         price_date=date(2026, 6, 1),
-        unit_price=1.2345,
-        acc_price=2.3456,
-        daily_return_rate=0.0123,
-        data_source=ProductDataSource.ManualImport,
+        price=Decimal("99.00"),
         version=0,
     )
     return await handler_db.insert(obj)

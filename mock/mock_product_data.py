@@ -21,7 +21,7 @@ from faker import Faker
 
 from service_mcp.db.core import DBManager, InfluxDBManager, get_manager
 from service_mcp.models.orm import Product, ProductPrice
-from service_mcp.utils.enums import ProductDataSource, ProductStatus, ProductType
+from service_mcp.utils.enums import ProductCategory
 from service_mcp.utils.log import get_logger
 
 
@@ -37,23 +37,23 @@ TABLE_META = {
 
 def generate_product_data() -> list[dict[str, Any]]:
     """
-    生成产品数据
+    生成商品数据
 
     Returns:
-        产品数据列表
+        商品数据列表
     """
     products = []
     for i in range(1, 21):
         products.append(
             {
                 "id": i,
-                "product_code": f"P{i:04d}",
-                "product_name": f"{fake.company()}旗舰产品{i:02d}号",
-                "product_short_name": f"产品{i:02d}号",
-                "product_type": random.choice(list(ProductType.__members__.values())),
-                "status": random.choice(list(ProductStatus.__members__.values())),
-                "launch_date": fake.date_between(start_date="-3y", end_date="today"),
-                "data_source": ProductDataSource.ManualImport,
+                "code": f"P{i:04d}",
+                "name": f"{fake.company()}旗舰商品{i:02d}号",
+                "category": random.choice(list(ProductCategory.__members__.values())),
+                "price": Decimal(str(round(random.uniform(1, 500), 2))),
+                "stock": random.randint(0, 200),
+                "is_active": random.choice([True, True, False]),
+                "remark": fake.sentence(nb_words=6) if random.random() > 0.5 else None,
             }
         )
     return products
@@ -61,36 +61,28 @@ def generate_product_data() -> list[dict[str, Any]]:
 
 def generate_product_price_data(product_ids: list[int]) -> list[dict[str, Any]]:
     """
-    生成产品价格数据（每个产品约 30 个交易日的价格序列）
+    生成商品价格数据（每个商品约 30 个自然日的价格序列）
 
     Args:
-        product_ids: 产品 ID 列表
+        product_ids: 商品 ID 列表
 
     Returns:
-        产品价格数据列表
+        商品价格数据列表
     """
     prices = []
     pid = 1
     for product_id in product_ids:
-        # 从今天往前生成 30 个自然日（含周末，演示用途）
         start = date.today() - timedelta(days=30)
-        unit = Decimal(random.uniform(1, 100)).quantize(Decimal("0.0001"))
+        unit = Decimal(str(round(random.uniform(1, 100), 2)))
         for day_offset in range(30):
             d = start + timedelta(days=day_offset)
-            unit = Decimal(str(round(float(unit) * (1 + random.uniform(-0.03, 0.03)), 4)))
-            acc = Decimal(str(round(float(unit) * random.uniform(1.1, 1.8), 4)))
-            daily = Decimal(
-                str(round(float(unit) / float(unit) - 1 + random.uniform(-0.03, 0.03), 4))
-            )
+            unit = Decimal(str(round(float(unit) * (1 + random.uniform(-0.03, 0.03)), 2)))
             prices.append(
                 {
                     "id": pid,
                     "product_id": product_id,
                     "price_date": d,
-                    "unit_price": unit,
-                    "acc_price": acc,
-                    "daily_return_rate": daily,
-                    "data_source": ProductDataSource.ManualImport,
+                    "price": unit,
                     "version": 0,
                 }
             )
@@ -104,20 +96,16 @@ def _build_tags_fields(
     """将 RDBMS 行转为 InfluxDB tags/fields。"""
     if table_name == "product":
         tags = {
-            "product_code": row.get("product_code", ""),
+            "code": row.get("code", ""),
         }
         fields = {
-            "product_name": row.get("product_name", ""),
-            "product_short_name": row.get("product_short_name", ""),
-            "product_type": row["product_type"].value
-            if hasattr(row.get("product_type"), "value")
-            else row.get("product_type", 0),
-            "status": row["status"].value
-            if hasattr(row.get("status"), "value")
-            else row.get("status", 0),
-            "data_source": row["data_source"].value
-            if hasattr(row.get("data_source"), "value")
-            else row.get("data_source", 0),
+            "name": row.get("name", ""),
+            "category": row["category"].value
+            if hasattr(row.get("category"), "value")
+            else row.get("category", 1),
+            "price": float(row["price"]) if row.get("price") is not None else 0.0,
+            "stock": int(row.get("stock", 0)),
+            "is_active": bool(row.get("is_active", True)),
         }
     elif table_name == "product_price":
         tags = {
@@ -127,14 +115,7 @@ def _build_tags_fields(
             else str(row.get("price_date", "")),
         }
         fields = {
-            "unit_price": float(row["unit_price"]) if row.get("unit_price") is not None else 0.0,
-            "acc_price": float(row["acc_price"]) if row.get("acc_price") is not None else 0.0,
-            "daily_return_rate": float(row["daily_return_rate"])
-            if row.get("daily_return_rate") is not None
-            else 0.0,
-            "data_source": row["data_source"].value
-            if hasattr(row.get("data_source"), "value")
-            else row.get("data_source", 0),
+            "price": float(row["price"]) if row.get("price") is not None else 0.0,
             "version": int(row.get("version", 0)),
         }
     else:
@@ -165,7 +146,7 @@ async def insert_data(
             tags, fields = _build_tags_fields(table_name, row)
 
             # 确定时间戳
-            ts: Any = row.get("price_date") or row.get("launch_date")
+            ts: Any = row.get("price_date")
             if ts is None:
                 ts = datetime.now(UTC)
             elif isinstance(ts, date) and not isinstance(ts, datetime):
@@ -209,12 +190,12 @@ async def main():
                 await mgr.create_all()
                 logger.info("ORM 表已就绪")
 
-            # 生成产品数据
+            # 生成商品数据
             product_data = generate_product_data()
             product_ids = [d["id"] for d in product_data]
             await insert_data(mgr, "product", product_data)
 
-            # 生成产品价格数据（依赖产品 ID）
+            # 生成商品价格数据（依赖商品 ID）
             price_data = generate_product_price_data(product_ids)
             await insert_data(mgr, "product_price", price_data)
 

@@ -1,7 +1,8 @@
 # Service MCP — 通用 FastMCP + SQLAlchemy CRUD 模板
 
 一个开箱即用的通用 [FastMCP](https://github.com/jlowin/fastmcp) 服务模板，内置 SQLAlchemy 异步
-CRUD 全套能力。由真实的基金净值 MCP 服务蒸馏而来，用于快速搭建新的 MCP 数据管理服务。
+CRUD 全套能力，可复用于快速搭建新的 MCP 数据管理服务。示例域 Product / ProductPrice 的字段
+与同族 `backend` / `frontend` 模板的 demo 商品契约一致。
 
 **技术栈**：Python 3.12+ · FastMCP 3.x · SQLAlchemy 2.x（async）· Pydantic v2 · Typer CLI · uv
 
@@ -10,14 +11,14 @@ CRUD 全套能力。由真实的基金净值 MCP 服务蒸馏而来，用于快�
 ## 特性
 
 - **注册表驱动的 CRUD 工具** —— 新增/更新/删除（单条 + 批量）由一行实体注册表自动生成，无逐实体样板代码。
-- **外键 code 自动解析** —— 业务编码（`product_code`）由处理器层自动解析为内部 ID，调用方不感知主键。
+- **外键 code 自动解析** —— 业务编码（`code`）由处理器层自动解析为内部 ID，调用方不感知主键。
 - **占位记录自动创建** —— 子记录引用不存在的父记录时，自动创建 `abnormal=Placeholder` 的占位父记录
-  （例如：为未知产品添加价格记录时自动建占位产品）。
+  （例如：为未知商品添加价格记录时自动建占位商品）。
 - **孤儿标记** —— 删除父记录时，将子记录标记为 `abnormal=Orphaned` 而非级联删除；
   `review_abnormal_items` 工具聚合所有待人工审核的记录。
-- **复合键删除** —— 子记录可按业务复合键定位（`product_code + price_date`）。
+- **复合键删除** —— 子记录可按业务复合键定位（`code + price_date`）。
 - **动态 Filter/Search** —— 过滤/搜索类在导入时由 ORM 内省自动生成；`.pyi` stub 由脚本重新生成，IDE 友好。
-- **冲突版本化** —— 同日同源价格冲突自动升级 `version` 列并标记待审核。
+- **冲突版本化** —— 同日价格冲突自动升级 `version` 列并标记待审核。
 - **多传输 CLI** —— `stdio` / `sse` / `streamable-http` / `ui`（FastMCP Apps 控制台）。
 - **分层配置** —— 环境变量 → TOML → 代码默认值（`MCP_` 前缀，`MCP_ENV` 选择 TOML）。
 - **认证就绪** —— JWT 中间件 + `mcp_perm` 权限装饰器 + 权限自动发现。
@@ -40,17 +41,17 @@ uv run service-mcp ui --dev-port 8080 --mcp-port 8001
 
 ## 示例实体
 
-模板内置一个最小领域 —— **Product（产品）+ ProductPrice（产品价格）**，端到端实现了你为自己的
-实体需要复刻的全部模式：
+模板内置一个最小领域 —— **Product（商品）+ ProductPrice（商品价格）**，字段与同族
+backend/frontend demo 商品契约对齐，端到端实现了你为自己的实体需要复刻的全部模式：
 
 | 实体 | 演示的模式 |
 |---|---|
-| `Product` | 唯一业务编码、软删除标记、占位自动创建（孤儿**父**表） |
-| `ProductPrice` | 外键 code 解析、复合唯一键（`product_id + price_date + data_source + version`）、版本冲突检测、孤儿标记目标、复合键删除 |
+| `Product` | 唯一业务编码 `code`、软删除标记、占位自动创建（孤儿**父**表） |
+| `ProductPrice` | 外键 code 解析（`code` → `product_id`）、复合唯一键（`product_id + price_date + version`）、版本冲突检测、孤儿标记目标、复合键删除 |
 
 链路示例：`add_product` → `AddHandler` → `CodeResolveMixin._resolve_fk_codes` → 价格记录自动把
-`product_code` 解析为 `product_id`；`delete_product` 将其所有价格标记 `abnormal=Orphaned`；
-`add_product_price` 若与同日同源已有价格冲突，自动 `version+1` 并标记 `abnormal=PriceConflict`。
+`code` 解析为 `product_id`；`delete_product` 将其所有价格标记 `abnormal=Orphaned`；
+`add_product_price` 若与同日已有价格冲突，自动 `version+1` 并标记 `abnormal=PriceConflict`。
 
 ## 项目结构
 
@@ -103,12 +104,13 @@ tests/                 # pytest 测试套件（内存 SQLite）
 ```bash
 uv run python scripts/rename_project.py my_company \
     --project my-company-mcp --display "My Company MCP" --db my_company_data
+uv run python scripts/rename_project.py my_company --write   # 预览确认后加 --write 落盘
 uv sync            # 重新生成 uv.lock / 安装依赖
 uv run pytest      # 确认测试通过
 ```
 
-脚本会替换所有文件内容并重命名包目录。先加 `--dry-run` 预览。
-`uv.lock` 不参与替换 —— 用 `uv sync` 重新生成。
+脚本默认 dry-run 预览，加 `--write` 才真正替换文件内容并重命名包目录。
+`uv.lock` 与脚本自身不参与替换 —— 锁文件用 `uv sync` 重新生成。
 
 ## Docker 部署
 
@@ -150,3 +152,4 @@ mypy service_mcp                # 类型检查
 ## License
 
 MIT
+

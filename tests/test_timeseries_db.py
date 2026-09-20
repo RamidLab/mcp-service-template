@@ -114,17 +114,18 @@ async def influxdb_manager(
     request, db_urls: dict[str, str]
 ) -> AsyncGenerator[InfluxDBManager, Any]:
     """
-    InfluxDB 连接管理器
-
-    Args:
-        request: pytest 请求对象
-        db_urls: 包含 InfluxDB 数据库 URL 的字典
-
-    Returns:
-        InfluxDBManager 实例
+    InfluxDB 连接管理器；服务不可达时 skip（家族约定：测试零外部服务可跑）。
     """
     mgr = InfluxDBManager(url=db_urls[request.param], token="your_token", org="test", bucket="test")
-    await mgr.connect()
+    try:
+        await mgr.connect()
+        healthy = await mgr.health_check()
+    except Exception as e:
+        pytest.skip(f"InfluxDB 不可用，跳过外部时序库用例: {e}")
+        raise
+    if not healthy:
+        await mgr.disconnect()
+        pytest.skip("InfluxDB 不可用，跳过外部时序库用例")
     yield mgr
     await mgr.disconnect()
 

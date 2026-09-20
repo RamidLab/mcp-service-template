@@ -65,15 +65,15 @@ class CodeResolveMixin:
     该 Mixin 用于 AddHandler、UpdateHandler 和 DeleteHandler，避免解析逻辑重复。
 
     工作机制：
-        - code 解析：当请求数据中包含业务编码（如 ``product_code``）时，
+        - code 解析：当请求数据中包含业务编码（如 ``code``）时，
           通过数据库查询将其转换为对应记录的主键 ID，并移除原始 code 字段。
         - 名称解析：当 code 未提供但给出了可读名称时，
           通过大小写不敏感精确匹配查找对应记录的 ID，要求名称唯一。
         - 自有 code 字段：某些模型自身包含具有唯一约束的 code 字段
-          （如 ``Product.product_code``），这些字段不参与外键解析，
+          （如 ``Product.code``），这些字段不参与外键解析，
           但可用于唯一性校验（主要在 AddHandler 中使用）以及通过 code 定位记录。
         - 占位自动创建：FK 解析失败时，_AUTO_CREATE_MODELS 中的模型
-          会自动创建 abnormal=Placeholder 的占位记录（如价格记录引用了不存在的产品）。
+          会自动创建 abnormal=Placeholder 的占位记录（如价格记录引用了不存在的商品）。
 
     Attributes:
         _CODE_RESOLVE_MAP: code 字段到 (目标 id 字段, 参照 ORM 模型, 参照表查询列) 的映射。
@@ -84,8 +84,9 @@ class CodeResolveMixin:
     """
 
     # code 字段 → (对应的 id 字段名, 参照的 ORM 模型, 用于查询的数据库列名)
+    # ProductPrice 对外输入用 code（= Product.code）定位商品，handler 解析为 product_id
     _CODE_RESOLVE_MAP: dict[str, tuple[str, type[Base], str]] = {
-        "product_code": ("product_id", Product, "product_code"),
+        "code": ("product_id", Product, "code"),
     }
 
     # 名称字段 → (对应的 code 字段, 对应的 id 字段, 参照的 ORM 模型, 用于查询的数据库名称列)
@@ -97,7 +98,7 @@ class CodeResolveMixin:
 
     # 每个 ORM 模型自身的 code 字段集合（在这里统一定义，可被子类覆盖）
     _OWN_CODE_FIELDS: dict[type[Base], set[str]] = {
-        Product: {"product_code"},
+        Product: {"code"},
     }
 
     # FK 解析失败时自动创建占位记录的参照模型集合
@@ -107,7 +108,6 @@ class CodeResolveMixin:
     _AUTO_MANAGED_COLUMNS: set[str] = {"id", "created_at", "updated_at"}
 
     _DATE_FIELDS: set = {
-        "launch_date",
         "price_date",
     }
 
@@ -116,7 +116,7 @@ class CodeResolveMixin:
         """
         从查询结果行对象中提取一个可读的业务编码，用于构造错误提示。
 
-        优先返回列名以 ``code`` 结尾的字段值，否则回退到记录的主键 ID。
+        优先返回列名等于 ``code`` 或以 ``code`` 结尾的字段值，否则回退到记录的主键 ID。
 
         Args:
             row: 数据库查询返回的 ORM 实例或行对象。
@@ -126,11 +126,11 @@ class CodeResolveMixin:
         """
         if isinstance(row, dict):
             for key, value in row.items():
-                if key.endswith("_code") and value:
+                if (key == "code" or key.endswith("_code")) and value:
                     return str(value)
             return str(row.get("id") or "N/A")
         for col in row.__table__.columns:
-            if col.name.endswith("_code"):
+            if col.name == "code" or col.name.endswith("_code"):
                 code_val: Any = getattr(row, col.name, None)
                 if code_val is not None:
                     return str(code_val)
@@ -223,6 +223,14 @@ class CodeResolveMixin:
         }
 
     @classmethod
+    def _ref_name_column(cls, ref_model: type[Base]) -> str:
+        """参照模型的名称列：优先裸 ``name``，否则 ``{table}_name``。"""
+        col_names = {c.name for c in ref_model.__table__.columns.values()}
+        if "name" in col_names:
+            return "name"
+        return f"{ref_model.__tablename__}_name"
+
+    @classmethod
     def _build_placeholder(
         cls,
         ref_model: type[Base],
@@ -230,8 +238,13 @@ class CodeResolveMixin:
         code_val: str,
         extras: dict[str, Any],
     ) -> Base:
-        """用内省构建占位记录：无默认值的列用类型感知兜底值填充，extras 覆盖。"""
+        """用内省构建占位记录：无默认值的列用类型感知兜底值填充，extras 覆盖。
+
+        带 Python/服务端默认值的列一律跳过，交给 SQLAlchemy 默认值机制，
+        避免类型兜底写入非法枚举值（如品类 0）。
+        """
         kwargs: dict[str, Any] = {lookup_col: code_val}
+        name_col = cls._ref_name_column(ref_model)
 
         for c in ref_model.__table__.columns.values():
             cn = c.name
@@ -239,8 +252,11 @@ class CodeResolveMixin:
                 continue
             if c.server_default is not None or c.primary_key or c.foreign_keys:
                 continue
+            # 有 Python-side default 的列交给 insert 时的默认值
+            if getattr(c, "default", None) is not None:
+                continue
             col_type = getattr(c.type, "impl", c.type)
-            if cn == f"{ref_model.__tablename__}_name" and isinstance(col_type, String):
+            if cn == name_col and isinstance(col_type, String):
                 kwargs[cn] = f"未知{ref_model.__tablename__}-{code_val}"
             elif isinstance(col_type, Date):
                 kwargs[cn] = date.today()
@@ -311,7 +327,7 @@ class CodeResolveMixin:
                 missing = [c for c in codes if c not in cache]
                 if missing:
                     passthrough = self._ref_passthrough_columns(model, lookup_col)
-                    name_col = f"{model.__tablename__}_name"
+                    name_col = self._ref_name_column(model)
                     for mc in missing:
                         # 可能已被前面迭代加入缓存，跳过避免重复插入
                         if mc in cache:
@@ -320,7 +336,7 @@ class CodeResolveMixin:
                         extras: dict[str, Any] = {}
                         candidate_names: list[str] = []
                         for d in data_list:
-                            if d.get(code_field, "").strip() == mc:
+                            if (d.get(code_field) or "").strip() == mc:
                                 nv = d.get(name_col)
                                 if isinstance(nv, str) and nv.strip():
                                     candidate_names.append(nv.strip())
@@ -343,7 +359,7 @@ class CodeResolveMixin:
         # 第三步：逐条数据处理
         strip = self._fk_code_fields(orm_model)
         # 非参照自身的模型需移除所有自动创建模型的透传字段
-        # 但透传字段若同时是当前模型自身的列（如 data_source），必须保留
+        # 但透传字段若同时是当前模型自身的列，必须保留
         own_cols = {c.name for c in orm_model.__table__.columns.values()}
         for ref_model in self._AUTO_CREATE_MODELS:
             if orm_model is not ref_model:
@@ -454,7 +470,7 @@ class CodeResolveMixin:
         """
         检查 data_list 中模型自身 code 字段的唯一性，防止重复。
 
-        遍历该模型的自有 code 字段（如 Product 的 ``product_code``），
+        遍历该模型的自有 code 字段（如 Product 的 ``code``），
         首先校验输入数据内部是否有重复值，然后查询数据库是否已存在相同的 code。
         若指定了 ``exclude_id``，则数据库查重时会排除该 ID（用于更新操作的自引用排除）。
 
@@ -517,7 +533,7 @@ class CodeResolveMixin:
         解析待操作记录的主键 ID。
 
         优先使用显式提供的 ``record_id``；若未提供，则尝试从 ``raw`` 中获取模型的自有
-        code 字段值（例如 ``product_code``），通过查询数据库定位对应的 ID。
+        code 字段值（例如 ``code``），通过查询数据库定位对应的 ID。
 
         Args:
             orm_model: 目标 ORM 模型类。

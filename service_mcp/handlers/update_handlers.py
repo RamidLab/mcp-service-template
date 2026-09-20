@@ -32,7 +32,7 @@ class UpdateHandler(CodeResolveMixin):
         Args:
             orm_model: 目标 ORM 模型类。
             data: 包含待应用字段的 Pydantic 更新模型。
-            record_id: 主键定位；若未提供，则回退到模型的唯一编码字段（例如 product_code）进行定位。
+            record_id: 主键定位；若未提供，则回退到模型的唯一编码字段（例如 code）进行定位。
             db_name: 数据库配置名称。
 
         Returns:

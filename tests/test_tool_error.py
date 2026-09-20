@@ -21,7 +21,7 @@ from service_mcp.utils.enums import Errcode
 
 async def test_batch_cap_business_response(handler_db):
     data = [
-        ProductCreate(product_code=f"CAP{i}", product_name=f"超上限{i}")
+        ProductCreate(code=f"CAP{i}", name=f"超上限{i}")
         for i in range(MAX_BATCH_SIZE + 1)
     ]
     resp = await crud_tools.add_products(data_list=data, db_name="handler_test")
@@ -32,7 +32,7 @@ async def test_batch_cap_business_response(handler_db):
 
 async def test_delete_not_found_business_response(handler_db):
     resp = await crud_tools.delete_product(
-        data=ProductDelete(product_code="NOT_EXIST"), db_name="handler_test"
+        data=ProductDelete(code="NOT_EXIST"), db_name="handler_test"
     )
     assert resp.code == Errcode.RECORD_NOT_FOUND
     assert "NOT_EXIST" in resp.message

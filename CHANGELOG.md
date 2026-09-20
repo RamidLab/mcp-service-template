@@ -4,6 +4,19 @@
 
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，并遵循 [语义化版本控制](https://semver.org/lang/zh-CN/)。
 
+## [Unreleased]
+
+### Changed
+
+- **示例域对齐**: Product / ProductPrice 字段改为与同族 backend/frontend demo 商品契约一致
+  （`code`/`name`/`category`/`price`/`stock`/`is_active`/`remark`；价格表对外 `code` + `price_date` + `price`）。
+  新增 `ProductCategory`（实物商品/虚拟商品/服务），删除金融风枚举与字段
+  （`ProductType`/`ProductStatus`/`ProductDataSource`、`acc_price`/`daily_return_rate`/`data_source` 等）。
+  教学模式保留：FK code 解析、复合唯一键 `(product_id, price_date, version)`、版本冲突、异常标记、软删、占位自动创建。
+- **文档与脚本**: README 去除公司业务谱系表述；AGENTS 示例字段同步并修正 middleware 说明；
+  `scripts/rename_project.py` 默认 dry-run、加 `--write` 才落盘，SKIP_FILES 包含脚本自身；
+  `pyproject.toml` 移除未使用的 `booktype`，redis 约束对齐家族写法。
+
 ## [0.3.0] - 2026-09-18
 
 ### Added
@@ -82,12 +95,15 @@
 
 ### Added
 
-- 初始化通用 FastMCP + SQLAlchemy CRUD 服务模板（由基金净值 MCP 服务蒸馏）：注册表驱动 CRUD、FK code 自动解析、占位自动创建、孤儿标记、动态 Filter/Search、多传输 CLI、Docker 部署、改名脚本。
+- 初始化通用 FastMCP + SQLAlchemy CRUD 服务模板（历史条目：由基金净值 MCP 服务蒸馏，现已中性化）：
+  注册表驱动 CRUD、FK code 自动解析、占位自动创建、孤儿标记、动态 Filter/Search、多传输 CLI、
+  Docker 部署、改名脚本。
 - 示例实体 Product / ProductPrice 端到端实现，演示全部核心模式（含价格冲突版本化、复合键删除）。
+  历史字段名（product_code 等）仅出现在本历史条目，当前代码契约已对齐 backend/frontend。
 
-[Unreleased]: https://github.com/RamidLab/mcp-service-template/compare/v0.3.0...HEAD
-[0.3.0]: https://github.com/RamidLab/mcp-service-template/compare/v0.2.0...v0.3.0
-[0.2.0]: https://github.com/RamidLab/mcp-service-template/compare/v0.1.1...v0.2.0
-[0.1.1]: https://github.com/RamidLab/mcp-service-template/compare/v0.1.0...v0.1.1
-[0.1.0]: https://github.com/RamidLab/mcp-service-template/releases/tag/v0.1.0
-[0.0.1]: https://github.com/RamidLab/mcp-service-template/releases/tag/v0.0.1
+[Unreleased]: ./CHANGELOG.md
+[0.3.0]: ./CHANGELOG.md
+[0.2.0]: ./CHANGELOG.md
+[0.1.1]: ./CHANGELOG.md
+[0.1.0]: ./CHANGELOG.md
+[0.0.1]: ./CHANGELOG.md

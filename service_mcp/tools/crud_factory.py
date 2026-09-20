@@ -44,7 +44,7 @@ def _entity(
         name: 单数工具名后缀（如 "product" → add_product）
         plural: 复数工具名后缀（如 "products" → add_products）
         model: ORM 模型类
-        resource: 权限资源码（01=产品, 02=产品价格, 07=配置, 08=审计）
+        resource: 权限资源码（01=商品, 02=商品价格, 07=配置, 08=审计）
         label: 中文实体名（用于工具标题/描述）
         create: 创建 Pydantic 模型，None 表示不支持新增
         update: 更新 Pydantic 模型，None 表示不支持更新
@@ -70,22 +70,22 @@ _ENTITIES: list[dict[str, Any]] = [
         "products",
         Product,
         "01",
-        "产品",
+        "商品",
         create=ProductCreate,
         update=ProductUpdate,
         delete=ProductDelete,
-        delete_lookup="通过 record_id、product_code 或 product_name 定位记录",
+        delete_lookup="通过 record_id、code 或 name 定位记录",
     ),
     _entity(
         "product_price",
         "product_prices",
         ProductPrice,
         "02",
-        "产品价格",
+        "商品价格",
         create=ProductPriceCreate,
         update=ProductPriceUpdate,
         delete=ProductPriceDelete,
-        delete_lookup="通过 record_id，或 product_code + price_date 定位记录",
+        delete_lookup="通过 record_id，或 code + price_date 定位记录",
     ),
 ]
 

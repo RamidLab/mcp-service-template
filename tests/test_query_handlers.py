@@ -1,6 +1,6 @@
 """QueryHandler 测试：分页过滤、关键字、外键显示展开、搜索类、异常待办聚合。"""
 
-from datetime import date
+from decimal import Decimal
 
 from service_mcp.handlers.query_handlers import QueryHandler
 from service_mcp.models.orm import Product, ProductPrice
@@ -11,7 +11,7 @@ from service_mcp.models.pydantic.search import (
     ProductSearchByKeyword,
 )
 from service_mcp.models.schemas import PaginationParams
-from service_mcp.utils.enums import AbnormalType, Errcode, ProductDataSource
+from service_mcp.utils.enums import AbnormalType, Errcode, ProductCategory
 from tests.conftest import HANDLER_DB_NAME, response_data
 
 
@@ -25,7 +25,8 @@ async def test_query_product_pagination(handler_db, seeded_product):
     data = response_data(resp)
     assert data.pagination.total == 1
     assert len(data.items) == 1
-    assert data.items[0]["product_code"] == "P0001"
+    assert data.items[0]["code"] == "P0001"
+    assert data.items[0]["name"] == "测试商品"
 
 
 async def test_query_product_keyword(handler_db, seeded_product):
@@ -48,24 +49,25 @@ async def test_query_product_sort(handler_db, seeded_product):
     """Filter 排序字段生效。"""
     await handler_db.insert(
         Product(
-            product_code="P0300",
-            product_name="排序产品",
-            launch_date=date(2020, 1, 1),
-            data_source=ProductDataSource.ManualImport,
+            code="P0300",
+            name="排序商品",
+            category=ProductCategory.SERVICE,
+            price=Decimal("1.00"),
+            stock=0,
         )
     )
-    filter_ = ProductFilter(sort_by="launch_date", sort_order="desc")
+    filter_ = ProductFilter(sort_by="price", sort_order="desc")
     handler = QueryHandler()
     resp = await handler.handle(
         Product, PaginationParams(page=1, page_size=10), filter_, HANDLER_DB_NAME
     )
-    # launch_date 2024 > 2020，降序第一应为 seeded_product
-    assert response_data(resp).items[0]["product_code"] == "P0001"
+    # seeded price 99.00 > 1.00，降序第一应为 seeded_product
+    assert response_data(resp).items[0]["code"] == "P0001"
 
 
 async def test_query_price_fk_display(handler_db, seeded_product, seeded_price):
-    """ProductPrice 列表展开 product_id → product_name/product_code。"""
-    filter_ = ProductPriceFilter.model_validate({"product_code": "P0001"})
+    """ProductPrice 列表展开 product_id → name/code。"""
+    filter_ = ProductPriceFilter.model_validate({"code": "P0001"})
     handler = QueryHandler()
     resp = await handler.handle(
         ProductPrice, PaginationParams(page=1, page_size=10), filter_, HANDLER_DB_NAME
@@ -73,8 +75,8 @@ async def test_query_price_fk_display(handler_db, seeded_product, seeded_price):
     assert resp.code == Errcode.SUCCESS
     item = response_data(resp).items[0]
     assert "product_id" not in item  # 外键列被替换移除
-    assert item["product_name"] == "测试产品"
-    assert item["product_code"] == "P0001"
+    assert item["name"] == "测试商品"
+    assert item["code"] == "P0001"
     assert str(item["price_date"]) == "2026-06-01"
 
 
@@ -95,15 +97,15 @@ async def test_search_by_fields(handler_db, seeded_product):
     resp = await handler.handle(
         Product,
         PaginationParams(page=1, page_size=10),
-        ProductSearchByFields.model_validate({"fields": [{"field": "product_name", "value": "测试产品"}]}),
+        ProductSearchByFields.model_validate({"fields": [{"field": "name", "value": "测试商品"}]}),
         HANDLER_DB_NAME,
     )
     assert resp.code == Errcode.SUCCESS
     assert response_data(resp).pagination.total == 1
 
 
-async def test_search_price_by_product_code(handler_db, seeded_product, seeded_price):
-    """价格搜索支持通过关系字段（产品代码/名称）匹配。"""
+async def test_search_price_by_code(handler_db, seeded_product, seeded_price):
+    """价格搜索支持通过关系字段（商品业务编码/名称）匹配。"""
     handler = QueryHandler()
     resp = await handler.handle(
         ProductPrice,
@@ -116,14 +118,13 @@ async def test_search_price_by_product_code(handler_db, seeded_product, seeded_p
 
 
 async def test_review_abnormal_items(handler_db, seeded_product, seeded_price):
-    """异常待办聚合：占位产品 + 孤儿价格均出现在清单中。"""
-    # 占位产品
+    """异常待办聚合：占位商品 + 孤儿价格均出现在清单中。"""
+    # 占位商品
     await handler_db.insert(
         Product(
-            product_code="P9999",
-            product_name="占位产品",
+            code="P9999",
+            name="占位商品",
             abnormal=AbnormalType.Placeholder,
-            data_source=ProductDataSource.ManualImport,
         )
     )
     # 孤儿价格
