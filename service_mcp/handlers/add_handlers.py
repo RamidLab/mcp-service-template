@@ -10,7 +10,7 @@ from service_mcp.handlers.base_handlers import CodeResolveMixin, _get_mgr
 from service_mcp.models.common import UtilResponse
 from service_mcp.models.orm import ProductPrice
 from service_mcp.models.orm.base import Base
-from service_mcp.utils.enums import AbnormalType, Errcode
+from service_mcp.utils.enums import AbnormalType, DataScope, Errcode
 from service_mcp.utils.log import get_logger
 
 
@@ -144,6 +144,54 @@ class AddHandler(CodeResolveMixin):
         raw["abnormal"] = AbnormalType.PriceConflict
         return raw
 
+    @staticmethod
+    def _stamp_ownership(orm_model: type[Base], raws: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """有身份时给新增行落归属档位（最小权限）；无身份（tool 模式/后台任务）一律不改。
+
+        口径：
+          - 模型没有 ``data_scope`` 列 → 原样返回（模板示例域不受影响）
+          - 调用方已表态 ``data_scope`` → 保留（平台档必须由显式表态产生，不默认给）
+          - 未表态 → ``personal`` + ``owner_id`` 取当前用户
+          - ``team`` 档未带 ``team_id`` → 取当前用户自属部门；无部门则只告警、不臆造，
+            档位保持不变（宁可少给归属，也不把数据塞进猜出来的部门）
+        """
+        if not hasattr(orm_model, "data_scope"):
+            return raws
+
+        from service_mcp.auth.context import (  # 延迟导入避免循环引用
+            current_owner,
+            current_team_id,
+            get_auth_context,
+        )
+
+        if get_auth_context() is None:
+            return raws
+
+        for raw in raws:
+            if raw.get("data_scope") is None:
+                raw["data_scope"] = DataScope.Personal.value
+            scope = raw["data_scope"]
+            if (
+                scope == DataScope.Personal.value
+                and hasattr(orm_model, "owner_id")
+                and raw.get("owner_id") is None
+            ):
+                raw["owner_id"] = current_owner()
+            if (
+                scope == DataScope.Team.value
+                and hasattr(orm_model, "team_id")
+                and raw.get("team_id") is None
+            ):
+                team = current_team_id()
+                if team is None:
+                    logger.warning(
+                        "团队档新增未给 team_id 且当前用户无所属部门，档位保持不变：%s",
+                        orm_model.__tablename__,
+                    )
+                else:
+                    raw["team_id"] = team
+        return raws
+
     async def _prepare_records(
         self,
         orm_model: type[Base],
@@ -171,6 +219,7 @@ class AddHandler(CodeResolveMixin):
         raws = await self._resolve_fk_codes(orm_model, raws, db_name)
         raws = await self._resolve_names(raws, db_name)
         raws = self._conv_date_fields(raws)
+        raws = self._stamp_ownership(orm_model, raws)
         return raws
 
     async def _insert_single(

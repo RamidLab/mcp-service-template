@@ -99,6 +99,19 @@ class UpdateHandler(CodeResolveMixin):
         if len(ids) != len(data_list):
             raise ToolError(f"数量不匹配：{len(ids)} 个 ID 与 {len(data_list)} 条数据不一致。")
 
+        # 批量按 id 直写、不经单条定位，这里单独收敛到可见子集。
+        # 被过滤掉的数量不写进 message：那会让批量接口变成探测他人行是否存在信道。
+        visible_ids = await self._visible_ids(orm_model, ids, db_name)
+        if len(visible_ids) != len(ids):
+            keep = set(visible_ids)
+            paired = [(rid, d) for rid, d in zip(ids, data_list) if rid in keep]
+            ids = [rid for rid, _ in paired]
+            data_list = [d for _, d in paired]
+        if not ids:
+            return UtilResponse(
+                code=Errcode.SUCCESS, message="没有可更新的记录。", data={"ids": [], "count": 0}
+            )
+
         raws = [d.model_dump() for d in data_list]
         cleaned: list[dict[str, Any]] = [
             {k: v for k, v in r.items() if v is not None} for r in raws

@@ -138,6 +138,16 @@ service_mcp/
   NULL 视为已审核）。
 - 无归属列的子表 → 在 `models/orm.PARENT_ENTITY_MAP` 登记 `(父实体, 外键列)`，查询按
   "父实体可见"过滤，孤儿行（外键空/父不存在）豁免保持可见。
+- **写侧与读侧同一条谓词**：单条更新/删除经 `CodeResolveMixin._resolve_record_id`、批量更新经
+  `_visible_ids` 收敛到可见子集；越权与"记录不存在"**共用同一条报错**（`RECORD_NOT_FOUND`），
+  批量提示也不区分两者——否则写接口就成了探测他人行是否存在的信道。
+  尚无身份（`MCP_AUTH_MODE=tool` / 后台任务）时**不收敛**，与读侧"无鉴权即全量"同口径；
+  要更保守的部署请走 admin 模式并给后台任务配服务账号身份。
+  已知缺口（与上游同）：无归属列的子表只在读侧叠加父实体可见性，写侧不叠加，
+  他人子表行仍写得进去，补齐它是独立改动。
+- **审核/治理类工具不要复用整行可见性**：审核者按定义读不到提交人的 PENDING/personal 行，
+  套用这条谓词会让审核流程静默失灵。这类动作的边界应落在**它自己的权限码**上
+  （上游做法：新增 `AuthAction.Govern="09"`，普通更新码不含治理），别把两个守卫"统一"掉。
 - 带 `is_deleted` 列的模型列表/搜索默认隐藏软删行（查询层自动叠加）。
 - 业务可预期失败在 handler 内 `raise ToolError(msg, Errcode.X)`（ValueError 子类），
   crud_factory 收口为 UtilResponse，绝不 500 化；批量工具受 `MAX_BATCH_SIZE=200` 上限保护。

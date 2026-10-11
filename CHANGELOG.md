@@ -17,6 +17,20 @@
   `scripts/rename_project.py` 默认 dry-run、加 `--write` 才落盘，SKIP_FILES 包含脚本自身；
   `pyproject.toml` 移除未使用的 `booktype`，redis 约束对齐家族写法。
 
+### Security
+
+- **写侧接上读侧同一份三级可见性**（[`handlers/base_handlers.py`](service_mcp/handlers/base_handlers.py)）：
+  此前 `scope_visibility_where()` 只作用于查询，写路径按主键直改——任何持有更新/删除权限码的调用方
+  都能改写他人 `personal` 行。现在 [`update_handlers.py`](service_mcp/handlers/update_handlers.py) 与
+  [`delete_handlers.py`](service_mcp/handlers/delete_handlers.py) 的单条定位统一带可见性条件（删除路径
+  不再自带一份主键查询），批量更新先把 id 收敛到可见子集再写；越权与"记录不存在"共用同一条报错，
+  批量提示也不区分两者，否则写接口就成了探测他人行是否存在的信道。
+- **新增行按身份落归属**（[`add_handlers.py`](service_mcp/handlers/add_handlers.py)）：有 AuthContext 且未表态
+  档位时默认 `personal` + 当前用户，`team` 档取调用者自属部门（无部门只告警、不臆造），`platform` 档
+  仍需显式表态；`current_team_id()` 从死代码接进写侧。无鉴权上下文（tool 模式/后台任务）口径不变，
+  示例域模型不带归属列因此不受影响。新增 [`tests/test_write_scope.py`](tests/test_write_scope.py) 钉住
+  越权被拒、本人放行、tool 模式全量、归属注入四条口径。
+
 ## [0.3.0] - 2026-09-18
 
 ### Added

@@ -113,16 +113,9 @@ class DeleteHandler(CodeResolveMixin):
         """按优先级依次尝试各种定位方式，返回目标记录的主键 ID。"""
         mgr = await _get_mgr(db_name)
 
-        # ── 1. record_id ──
+        # ── 1. record_id ──（与更新共用同一条定位口径，含可见性收敛）
         if record_id is not None:
-            stmt = select(orm_model.id).where(orm_model.id == record_id)
-            row = await mgr.fetch_one(stmt)
-            if row is None:
-                raise ToolError(
-                    f"{orm_model.__tablename__} 表中未找到 id={record_id} 的记录。",
-                    Errcode.RECORD_NOT_FOUND,
-                )
-            return record_id
+            return await self._resolve_record_id(orm_model, record_id, {}, db_name)
 
         # ── 2. 自有编码字段（code）──
         own = self._OWN_CODE_FIELDS.get(orm_model, set())

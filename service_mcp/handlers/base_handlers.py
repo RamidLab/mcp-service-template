@@ -522,6 +522,29 @@ class CodeResolveMixin:
                     "失败：以下 code 已存在，请使用不同的 code。\n" + "\n".join(conflicts)
                 )
 
+    @staticmethod
+    def _visibility_conditions(orm_model: type[Base]) -> list:
+        """写侧可见性条件，唯一来源与读侧同一个函数（两侧不允许分叉）。
+
+        返回空列表表示**不收敛**：模型没有 ``data_scope`` 列，或当前无鉴权上下文
+        （tool 模式 / 后台任务照旧全量可写）。
+        """
+        from service_mcp.auth.context import scope_visibility_where  # 延迟导入避免循环引用
+
+        return scope_visibility_where(orm_model) or []
+
+    async def _visible_ids(
+        self, orm_model: type[Base], ids: list[int], db_name: str
+    ) -> list[int]:
+        """把批量操作的主键集合收敛到调用者可见的子集（保持入参顺序）。"""
+        vis = self._visibility_conditions(orm_model)
+        if not vis or not ids:
+            return list(ids)
+        mgr = await _get_mgr(db_name)
+        rows = await mgr.fetch_all(select(orm_model.id).where(orm_model.id.in_(ids), *vis))
+        allowed = {row["id"] for row in rows}
+        return [i for i in ids if i in allowed]
+
     async def _resolve_record_id(
         self,
         orm_model: type[Base],
@@ -535,6 +558,9 @@ class CodeResolveMixin:
         优先使用显式提供的 ``record_id``；若未提供，则尝试从 ``raw`` 中获取模型的自有
         code 字段值（例如 ``code``），通过查询数据库定位对应的 ID。
 
+        两条定位路径都带上 `_visibility_conditions`：越权定位与"记录不存在"共用同一条
+        报错，避免写侧变成探测他人行是否存在的信道。
+
         Args:
             orm_model: 目标 ORM 模型类。
             record_id: 直接指定的主键 ID，可为 None。
@@ -544,9 +570,10 @@ class CodeResolveMixin:
         Returns:
             解析出的整数主键 ID。
         """
+        vis = self._visibility_conditions(orm_model)
         if record_id is not None:
             mgr = await _get_mgr(db_name)
-            stmt = select(orm_model.id).where(orm_model.id == record_id)
+            stmt = select(orm_model.id).where(orm_model.id == record_id, *vis)
             row = await mgr.fetch_one(stmt)
             if row is None:
                 raise ToolError(
@@ -564,7 +591,7 @@ class CodeResolveMixin:
             cv = raw.get(code_field)
             if not isinstance(cv, str):
                 continue
-            stmt = select(orm_model.id).where(getattr(orm_model, lookup_col) == cv.strip())
+            stmt = select(orm_model.id).where(getattr(orm_model, lookup_col) == cv.strip(), *vis)
             row = await mgr.fetch_one(stmt)
             if row is None:
                 raise ToolError(
