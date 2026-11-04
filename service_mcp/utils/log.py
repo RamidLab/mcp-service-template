@@ -1,18 +1,63 @@
 from __future__ import annotations
 
 
-__all__ = ["configure_logging", "get_log_level", "get_logger"]
+__all__ = ["configure_logging", "demote_console_rendering", "get_log_level", "get_logger"]
 
 import datetime
 import json
 import logging
 import logging.handlers
+import sys
 import traceback
 from typing import Any
 
 from rich.logging import RichHandler
 
 from service_mcp.utils.path_utils import PROJECT_ROOT
+
+
+#: 非 tty 时的控制台格式：一行一条、可 grep（rich 会把一行拆成带边框的多行并按列宽折行）
+PLAIN_CONSOLE_FORMAT = "%(asctime)s %(levelname)-7s %(name)s: %(message)s"
+
+
+def _is_interactive() -> bool:
+    """标准输出是不是终端。重定向到文件/管道时不是——那是日志的正常落法。"""
+    return bool(getattr(sys.stdout, "isatty", lambda: False)())
+
+
+def _plain_console_handler() -> logging.Handler:
+    """纯文本控制台处理器：一行一条，落进文件/管道后仍可按行 grep。"""
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setFormatter(logging.Formatter(PLAIN_CONSOLE_FORMAT))
+    return handler
+
+
+def _console_handler() -> logging.Handler:
+    """tty 用 rich，非 tty 用纯文本流处理器。"""
+    if _is_interactive():
+        return RichHandler(rich_tracebacks=True, show_path=False)
+    return _plain_console_handler()
+
+
+def demote_console_rendering(name: str = "fastmcp") -> int:
+    """把某个 logger 自带的 rich 控制台处理器换成纯文本，返回换掉的个数（tty 下不换，回 0）。
+
+    第三方库（FastMCP）在自己的模块被 import 时就把日志配好了，而 `configure_logging`
+    只清 root 的处理器，管不到那一层——不换的话它那一路输出仍然是折行 + 边框格式。
+    """
+    if _is_interactive():
+        return 0
+    target = logging.getLogger(name)
+    replaced = 0
+    for handler in list(getattr(target, "handlers", ())):
+        if type(handler).__module__.startswith("rich"):
+            target.removeHandler(handler)
+            plain = _plain_console_handler()
+            plain.setLevel(handler.level)
+            target.addHandler(plain)
+            handler.close()
+            replaced += 1
+    return replaced
 
 
 def get_logger(name: str | None = None) -> logging.Logger:
@@ -126,7 +171,7 @@ def configure_logging(
 
     Args:
         level: 日志级别，使用 logging.DEBUG/INFO/WARNING/ERROR/CRITICAL。
-        console: 是否输出到控制台（rich 格式）。
+        console: 是否输出到控制台（tty 用 rich，重定向到文件/管道时用一行一条的纯文本）。
         file: 是否输出到文件。
         file_path: 日志文件存放目录。
         file_base_name: 日志文件基名。
@@ -145,7 +190,7 @@ def configure_logging(
     root.propagate = False
 
     if console:
-        console_handler: logging.Handler = RichHandler(rich_tracebacks=True, show_path=False)
+        console_handler: logging.Handler = _console_handler()
         console_handler.setLevel(level)
         root.addHandler(console_handler)
 

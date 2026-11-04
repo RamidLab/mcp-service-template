@@ -19,6 +19,11 @@
 
 ### Fixed
 
+- **非终端环境下控制台日志改走纯文本一行一条**（[`utils/log.py`](service_mcp/utils/log.py)）：rich 把一条
+  记录拆成带边框的多行并按列宽折行，重定向到文件/管道后没法按行 grep，Windows 上还要为渲染付 CPU。
+  现在 `configure_logging` 按 `sys.stdout.isatty()` 选处理器（交互终端照旧 rich），并新增
+  `demote_console_rendering()`——`configure_logging` 只清 root 的处理器，管不到 FastMCP 那个 logger
+  自带的那一路，[`server.py`](service_mcp/server.py) 启动时对它补一次替换，交互终端上行为不变。
 - **权限发现补登记导出工具模块**（[`auth/discovery.py`](service_mcp/auth/discovery.py)）：`get_all_permissions`
   只扫手写的 `_TOOL_MODULES`，`export_tools` 漏在里面——工具照旧能用、超管照旧能调，但它声明的
   权限码永远不进 `/permissions`，后端 RBAC 里就没有这一行，除超管以外的人一个都拿不到。

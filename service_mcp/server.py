@@ -25,7 +25,7 @@ from service_mcp.auth.discovery import (
 )
 from service_mcp.auth.middleware import JWTAuthMiddleware
 from service_mcp.config import setup_settings
-from service_mcp.utils.log import configure_logging, get_logger
+from service_mcp.utils.log import configure_logging, demote_console_rendering, get_logger
 from service_mcp.utils.path_utils import load_env
 
 
@@ -39,6 +39,8 @@ logger = get_logger(__name__)
 load_env()
 fastmcp_settings.log_level = cast(LOG_LEVEL, os.getenv("FASTMCP_LOG_LEVEL", "INFO"))
 fastmcp_configure_logging(level=fastmcp_settings.log_level, logger=logging.getLogger("fastmcp"))
+# 非 tty（重定向到文件/管道）时把 fastmcp 那一路也从 rich 折行格式换成纯文本，否则日志没法 grep
+demote_console_rendering("fastmcp")
 # 屏蔽 uvicorn/httpx/httpcore 的请求日志
 for _name in ("uvicorn.access", "uvicorn.error", "httpx", "httpcore", "aiohttp"):
     logging.getLogger(_name).setLevel(logging.WARNING)
