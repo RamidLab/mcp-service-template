@@ -6,6 +6,23 @@
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-11-04
+
+### Security
+
+- **写侧缺身份按模式分叉**（[`handlers/ownership.py`](service_mcp/handlers/ownership.py)）：
+  `admin` 模式（`MCP_AUTH_MODE=admin`）下没有 AuthContext 时，带 `data_scope` 列的模型一律拒写
+  （`AUTH_INSUFFICIENT_SCOPE`）——装饰器那层 fail-closed 只挡工具调用，进程内宿主与"未恢复身份
+  快照的后台任务"直接调 handler 绕得开它。`tool` 模式口径不变（无身份即全量，采集照常）。
+  判"要不要拒"的口径收敛到唯一一处 `auth.config.is_admin_mode`，装饰器与写侧不再各读各的环境变量。
+  没有归属列的模型不受影响，一条用例把这条豁免也钉住（否则下一位作者会把示例域写死）。
+- **越权与"记录不存在"合并成一句话**（[`handlers/base_handlers.py`](service_mcp/handlers/base_handlers.py)）：
+  此前收敛生效时回的是"未找到 id=N 的记录"，那是对存在性的**错误断言**——调用者信了就会去新建，
+  撞唯一键的那一刻反而把"这行确实存在"暴露出去。现在可见性条件一旦施加，两句合成一句
+  「不存在，或不在你的数据范围内」，错误码不变（`RECORD_NOT_FOUND`）；未施加收敛（tool 模式/无归属列）
+  时没有歧义，仍回"未找到"。新增用例先归一 id 再逐字比较两句，并断言"不可见"三字不得出现——
+  实测过变异：把不可见的行改成另一套文案，用例立刻红。
+
 ## [0.4.0] - 2026-11-04
 
 ### Changed

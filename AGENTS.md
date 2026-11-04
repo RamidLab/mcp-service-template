@@ -144,10 +144,12 @@ service_mcp/
 - 无归属列的子表 → 在 `models/orm.PARENT_ENTITY_MAP` 登记 `(父实体, 外键列)`，查询按
   "父实体可见"过滤，孤儿行（外键空/父不存在）豁免保持可见。
 - **写侧与读侧同一条谓词**：单条更新/删除经 `CodeResolveMixin._resolve_record_id`、批量更新经
-  `_visible_ids` 收敛到可见子集；越权与"记录不存在"**共用同一条报错**（`RECORD_NOT_FOUND`），
-  批量提示也不区分两者——否则写接口就成了探测他人行是否存在的信道。
-  尚无身份（`MCP_AUTH_MODE=tool` / 后台任务）时**不收敛**，与读侧"无鉴权即全量"同口径；
-  要更保守的部署请走 admin 模式并给后台任务配服务账号身份。
+  `_visible_ids` 收敛到可见子集。**越权与"记录不存在"必须回同一句话**（`RECORD_NOT_FOUND` +
+  "不存在，或不在你的数据范围内"），批量提示也不区分两者——两种答案并存就是一条探测信道，
+  而回"不可见"同样是泄露（`tests/test_write_scope.py` 把"两句归一后逐字相等"钉成断言）。
+  **缺身份时按模式分叉**（`ownership.require_identity_for_scoped_write`，唯一口径
+  `auth.config.is_admin_mode`）：tool 模式不收敛（与读侧"无鉴权即全量"同口径，采集/后台照常），
+  admin 模式一律拒绝——装饰器的 fail-closed 只挡工具调用，直接调 handler 绕得开它。
   已知缺口（与上游同）：无归属列的子表只在读侧叠加父实体可见性，写侧不叠加，
   他人子表行仍写得进去，补齐它是独立改动。
 - **新增的档位落点由 `handlers/ownership.assert_add_allowed` 判**（在归属注入之后，判的是将要落库的

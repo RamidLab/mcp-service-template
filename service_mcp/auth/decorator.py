@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import inspect
-import os
 from functools import wraps
 
+from service_mcp.auth.config import is_admin_mode
 from service_mcp.auth.context import _auth_context, _current_perm_scope
 from service_mcp.models.common import UtilResponse
 from service_mcp.utils.enums import Errcode
@@ -63,7 +63,7 @@ def mcp_perm(resource: str, action: str):
                     # fail-closed：admin 模式必须有 AuthContext（HTTP 中间件注入）；
                     # 后台任务 worker 未恢复 AuthContext 时拒绝执行；
                     # tool 模式（MCP_AUTH_MODE=tool）无鉴权全量可见。
-                    if os.getenv("MCP_AUTH_MODE", "tool") == "admin":
+                    if is_admin_mode():
                         return _auth_context_missing_response()
                     return await func(*args, **kwargs)
                 if ctx.is_superuser:
@@ -88,7 +88,7 @@ def mcp_perm(resource: str, action: str):
                 ctx = _auth_context.get()
                 if ctx is None:
                     # 与 async 分支一致：admin 模式 fail-closed，tool 模式放行
-                    if os.getenv("MCP_AUTH_MODE", "tool") == "admin":
+                    if is_admin_mode():
                         return _auth_context_missing_response()
                     return func(*args, **kwargs)
                 if ctx.is_superuser:

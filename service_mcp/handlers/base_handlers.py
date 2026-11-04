@@ -526,11 +526,14 @@ class CodeResolveMixin:
     def _visibility_conditions(orm_model: type[Base]) -> list:
         """写侧可见性条件，唯一来源与读侧同一个函数（两侧不允许分叉）。
 
-        返回空列表表示**不收敛**：模型没有 ``data_scope`` 列，或当前无鉴权上下文
-        （tool 模式 / 后台任务照旧全量可写）。
+        返回空列表表示**不收敛**：模型没有 ``data_scope`` 列，或处于 tool 模式
+        （无鉴权上下文，采集/后台任务照旧全量可写）。
+        admin 模式下缺上下文则直接拒绝——装饰器的 fail-closed 挡不住直接调 handler 的那一路。
         """
         from service_mcp.auth.context import scope_visibility_where  # 延迟导入避免循环引用
+        from service_mcp.handlers.ownership import require_identity_for_scoped_write
 
+        require_identity_for_scoped_write(orm_model)
         return scope_visibility_where(orm_model) or []
 
     async def _visible_ids(
@@ -571,15 +574,19 @@ class CodeResolveMixin:
             解析出的整数主键 ID。
         """
         vis = self._visibility_conditions(orm_model)
+
+        def _not_found(detail: str) -> str:
+            """收敛生效时两句合成一句：断言"不存在"会引导调用者去新建，撞唯一键反而把存在性露出去。"""
+            if vis:
+                return f"{orm_model.__tablename__} 表中无 {detail} 可操作记录（不存在，或不在你的数据范围内）。"
+            return f"{orm_model.__tablename__} 表中未找到 {detail} 的记录。"
+
         if record_id is not None:
             mgr = await _get_mgr(db_name)
             stmt = select(orm_model.id).where(orm_model.id == record_id, *vis)
             row = await mgr.fetch_one(stmt)
             if row is None:
-                raise ToolError(
-                    f"{orm_model.__tablename__} 表中未找到 id={record_id} 的记录。",
-                    Errcode.RECORD_NOT_FOUND,
-                )
+                raise ToolError(_not_found(f"id={record_id}"), Errcode.RECORD_NOT_FOUND)
             return record_id
 
         # 尝试通过模型自身的 code 字段解析
@@ -594,10 +601,7 @@ class CodeResolveMixin:
             stmt = select(orm_model.id).where(getattr(orm_model, lookup_col) == cv.strip(), *vis)
             row = await mgr.fetch_one(stmt)
             if row is None:
-                raise ToolError(
-                    f"{orm_model.__tablename__} 表中未找到 {code_field}='{cv}' 的记录。",
-                    Errcode.RECORD_NOT_FOUND,
-                )
+                raise ToolError(_not_found(f"{code_field}='{cv}'"), Errcode.RECORD_NOT_FOUND)
             return row["id"]
 
         raise ToolError(

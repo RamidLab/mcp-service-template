@@ -58,6 +58,26 @@ def holds_governance_code(model: type[Base], ctx: AuthContext | None) -> bool:
     return code is not None and code in (ctx.permissions or {})
 
 
+def require_identity_for_scoped_write(model: type[Base]) -> None:
+    """admin 模式下缺身份 ⇒ 拒写带归属范围的模型（tool 模式按设计放行）。
+
+    装饰器那层的 fail-closed 只挡工具调用：进程内宿主或直接调 handler（后台任务未恢复身份
+    快照）绕得开它，所以写侧自己再落一次同一判据——判"要不要拒"的口径只有一处
+    （``auth.config.is_admin_mode``），不与装饰器各读各的环境变量。
+    没有 ``data_scope`` 列的模型不受影响（示例域、采集写入照常）。
+    """
+    from service_mcp.auth.config import is_admin_mode  # 延迟导入：与 handlers 无循环但保持一致
+    from service_mcp.auth.context import get_auth_context
+
+    if not hasattr(model, "data_scope"):
+        return
+    if is_admin_mode() and get_auth_context() is None:
+        raise ToolError(
+            "缺少认证上下文：带归属范围的数据不能在无身份时写入（admin 模式 fail-closed）",
+            Errcode.AUTH_INSUFFICIENT_SCOPE,
+        )
+
+
 async def assert_add_allowed(model: type[Base], raws: list[dict[str, Any]]) -> None:
     """校验本批新增的归属落点。不合法直接抛 ``ToolError``（整批拒绝，不部分成功）。
 
@@ -77,9 +97,9 @@ async def assert_add_allowed(model: type[Base], raws: list[dict[str, Any]]) -> N
     调用位置在通用新增路径的归属注入**之后**：那时 ``data_scope`` / ``team_id`` / ``owner_id``
     才是本批将要落库的真值，默认档（带身份→personal）与显式档走同一条判据。
 
-    无鉴权上下文（tool 模式/后台任务）不校验，模型没有 ``data_scope`` 列同样不校验——
-    与读侧"无身份即全量"同口径，但这条**不能被当成安全边界**（admin 模式缺身份是 fail-closed
-    拒绝，见 ``auth.decorator``）。
+    无鉴权上下文时分两种口径：**tool 模式不校验**（与读侧"无身份即全量"同口径，但它不是安全
+    边界——真需要身份隔离请开 admin 模式）；**admin 模式直接拒绝**（见
+    :func:`require_identity_for_scoped_write`）。模型没有 ``data_scope`` 列同样不校验。
 
     Args:
         model: 目标 ORM 模型类。
@@ -92,6 +112,7 @@ async def assert_add_allowed(model: type[Base], raws: list[dict[str, Any]]) -> N
     """
     from service_mcp.auth.context import get_auth_context  # 延迟导入：auth 包顶层会绕回 handlers
 
+    require_identity_for_scoped_write(model)
     ctx = get_auth_context()
     if ctx is None or not hasattr(model, "data_scope"):
         return

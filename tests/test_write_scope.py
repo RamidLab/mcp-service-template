@@ -363,3 +363,71 @@ def test_registered_governance_code_is_discoverable(govern_registry):
     不在清单上就没人能被授予，平台档从此只剩超管写得。"""
     codes = {p["code"] for p in get_all_permissions()}
     assert govern_registry in codes
+
+
+async def test_admin_mode_without_identity_cannot_write_scoped_row(handler_db, monkeypatch):
+    """鉴权开着（admin 模式）却没有身份 ⇒ 带归属列的模型写侧拒绝。
+
+    装饰器那层的 fail-closed 只挡工具调用；直接调 handler（后台任务、进程内宿主）绕得开它，
+    所以判据要在写侧再落一次。tool 模式口径不变——见 test_write_without_context_keeps_full_access。
+    """
+    row = await handler_db.insert(
+        ScopeDoc(title="bg", data_scope=DataScope.Personal.value, owner_id=11)
+    )
+    monkeypatch.setenv("MCP_AUTH_MODE", "admin")
+    assert _auth_context.get() is None
+
+    with pytest.raises(ToolError) as exc:
+        await UpdateHandler().handle(
+            ScopeDoc, DocUpdate(title="无身份改写"), row.id, HANDLER_DB_NAME
+        )
+
+    assert exc.value.code == Errcode.AUTH_INSUFFICIENT_SCOPE
+    assert "不可见" not in str(exc.value), "拒绝的理由是「没有身份」，不是那行的存在性"
+
+
+async def test_admin_mode_without_identity_still_writes_unscoped_model(
+    handler_db, seeded_product, monkeypatch
+):
+    """没有归属列的模型不受这条判据影响（示例域/后台采集照常可写）。"""
+    from service_mcp.models.orm import Product
+    from service_mcp.models.pydantic.product import ProductUpdate
+
+    monkeypatch.setenv("MCP_AUTH_MODE", "admin")
+    resp = await UpdateHandler().handle(
+        Product, ProductUpdate(name="无身份也写得动"), seeded_product.id, HANDLER_DB_NAME
+    )
+    assert resp.code == Errcode.SUCCESS
+
+
+async def test_invisible_and_missing_rows_answer_identically(handler_db):
+    """越权与"真没有这一行"必须回同一句话。
+
+    两种答案并存，写接口就成了探测他人行是否存在的信道；而回"不可见"同样是泄露。
+    断言先把 id 归一，再逐字比较两句——只要文案分叉就红。
+    """
+    other = await handler_db.insert(
+        ScopeDoc(title="p-other", data_scope=DataScope.Personal.value, owner_id=11)
+    )
+    missing_id = other.id + 999
+    _login_as(10)
+
+    with pytest.raises(ToolError) as invisible:
+        await UpdateHandler().handle(
+            ScopeDoc, DocUpdate(title="x"), other.id, HANDLER_DB_NAME
+        )
+    with pytest.raises(ToolError) as absent:
+        await UpdateHandler().handle(
+            ScopeDoc, DocUpdate(title="x"), missing_id, HANDLER_DB_NAME
+        )
+
+    def _normalize(text: str, target: int) -> str:
+        return text.replace(f"id={target}", "id=?")
+
+    left = _normalize(str(invisible.value), other.id)
+    right = _normalize(str(absent.value), missing_id)
+    assert left == right, f"两句答案可分辨，等于给出了一条探测信道：\n{left!r}\n{right!r}"
+    assert "不可见" not in left
+    # 收敛生效时不得断言"不存在"：那会引导调用者去新建，撞唯一键反而把存在性暴露出来
+    assert "不存在，或不在你的数据范围内" in left
+    assert invisible.value.code == absent.value.code == Errcode.RECORD_NOT_FOUND
