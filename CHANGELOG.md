@@ -6,6 +6,8 @@
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-04
+
 ### Changed
 
 - **示例域对齐**: Product / ProductPrice 字段改为与同族 backend/frontend demo 商品契约一致
@@ -32,6 +34,8 @@
 - **权限发现补登记导出工具模块**（[`auth/discovery.py`](service_mcp/auth/discovery.py)）：`get_all_permissions`
   只扫手写的 `_TOOL_MODULES`，`export_tools` 漏在里面——工具照旧能用、超管照旧能调，但它声明的
   权限码永远不进 `/permissions`，后端 RBAC 里就没有这一行，除超管以外的人一个都拿不到。
+  新增 [`tests/test_auth_discovery.py`](tests/test_auth_discovery.py) 逐模块扫工具包，把"声明过码的模块
+  必须都在扫描清单里"与"下发的码要能查到资源名/操作名"钉成可红的断言。
 
 ### Security
 

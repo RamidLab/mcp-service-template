@@ -72,7 +72,7 @@ service_mcp/
 configs/               # config.example.toml 骨架（各环境 TOML 被 git 忽略）
 docker/                # compose 文件、entrypoint、ctl.sh/ctl.ps1
 mock/                  # mock_product_data.py
-scripts/               # rename_project.py、refresh_project_stub.py、migrate_example.py
+scripts/               # rename_project.py、refresh_project_stub.py、migrate_example.py、_migration_common.py
 tests/                 # pytest 测试套件（内存 SQLite）
 ```
 

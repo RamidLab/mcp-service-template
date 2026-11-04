@@ -59,13 +59,14 @@ service_mcp/
 ├── auth/              # JWT 认证 + 权限
 │   ├── config.py      # AuthConfig（mode: tool/admin，从环境变量加载）
 │   ├── context.py     # 请求上下文（current_owner / scope_visibility_where 三级可见性）
-│   ├── decorator.py   # @mcp_perm(resource, action) 权限装饰器
+│   ├── decorator.py   # @mcp_perm(resource, action) 权限装饰器 + build_perm_code（码格式唯一来源）
 │   ├── discovery.py   # get_entity_metadata / get_all_permissions（实体元数据缓存）
 │   └── middleware.py  # JWTAuthMiddleware（admin 模式时启用，server.py 挂载）
 ├── db/core.py         # DBManager（异步 SQLAlchemy CRUD/分页）+ InfluxDBManager + 管理器缓存
 ├── error/exceptions.py # UniqueConflictError / ToolError（业务失败收口）等自定义异常
 ├── handlers/          # 业务逻辑层
-│   ├── base_handlers.py   # CodeResolveMixin — FK code→id 解析、占位自动创建
+│   ├── base_handlers.py   # CodeResolveMixin — FK code→id 解析、占位自动创建、写侧可见性收敛
+│   ├── ownership.py   # 归属档位判据 + GOVERNANCE_RESOURCES（表名→资源码）治理注册表
 │   ├── add_handlers.py    # 单条 + 批量插入（含价格冲突版本升级）
 │   ├── delete_handlers.py # 注册表驱动的删除定位 + 孤儿标记
 │   ├── update_handlers.py # 部分更新（None 字段跳过）
@@ -111,7 +112,11 @@ service_mcp/
 ### 工具注册
 - 工具用 `@tool`（fastmcp.tools）；配置类工具额外用 `@global_tool`（`tools/__init__.py`，apps UI 可跨 App 调用）。
 - 标签：`sys_tool`（健康检查）、`config_tool`（配置管理）、`domain_tool`（领域工具）。
-- 权限：`@mcp_perm(resource, action)` → 权限码 `SM_01{resource}{action}`（resource 为两位资源码，action 为两位操作码）。
+- 权限：`@mcp_perm(resource, action)` → 权限码 `SM_01{resource}{action}`（resource 为两位资源码，action 为两位操作码）；
+  码格式只在 `auth.decorator.build_perm_code` 一处（前缀常量 `PERM_PREFIX`），写侧判据要拼码也走它，别抄第二串字面量。
+- 权限发现（`auth/discovery._TOOL_MODULES`）是手写清单：新工具模块**必须登记进去**，否则它声明的码不进
+  `/permissions`、RBAC 里没有这一行（工具照旧能用、超管照旧能调，除超管一律 403）。
+  这条不变量由 `tests/test_auth_discovery.py` 扫工具包把守。
 
 ### FK 解析（CodeResolveMixin）
 业务编码（如 `code`）自动解析为内部 ID，调用方不暴露主键。注册表：
@@ -145,9 +150,16 @@ service_mcp/
   要更保守的部署请走 admin 模式并给后台任务配服务账号身份。
   已知缺口（与上游同）：无归属列的子表只在读侧叠加父实体可见性，写侧不叠加，
   他人子表行仍写得进去，补齐它是独立改动。
+- **新增的档位落点由 `handlers/ownership.assert_add_allowed` 判**（在归属注入之后，判的是将要落库的
+  真值）：档位值只认 `DataScope` 词表（列是裸字符串无 CHECK、读侧只认字面量，不认识的值写进去就
+  "谁都读不到"）、`platform` 需该实体的治理码、`personal` 的 `owner_id` 只能是自己、`team` 的
+  `team_id` 只能在 `ctx.team_ids` 里。治理码按表名登记在 `ownership.GOVERNANCE_RESOURCES`
+  （值是**资源码**，完整码经 `build_perm_code` 现拼），登记的码随 `/permissions` 下发才谈得上授予；
+  **未登记的实体平台档只剩超管写得**——示例域不带归属列故整条不触发，下游补了 `data_scope` 列就要决定
+  是否登记。无鉴权上下文照旧不校验（同读侧口径，但别把它当安全边界）。
 - **审核/治理类工具不要复用整行可见性**：审核者按定义读不到提交人的 PENDING/personal 行，
   套用这条谓词会让审核流程静默失灵。这类动作的边界应落在**它自己的权限码**上
-  （上游做法：新增 `AuthAction.Govern="09"`，普通更新码不含治理），别把两个守卫"统一"掉。
+  （本仓已落 `AuthAction.Govern="09"`，普通更新码不含治理），别把两个守卫"统一"掉。
 - 带 `is_deleted` 列的模型列表/搜索默认隐藏软删行（查询层自动叠加）。
 - 业务可预期失败在 handler 内 `raise ToolError(msg, Errcode.X)`（ValueError 子类），
   crud_factory 收口为 UtilResponse，绝不 500 化；批量工具受 `MAX_BATCH_SIZE=200` 上限保护。
@@ -158,6 +170,15 @@ service_mcp/
 分层：显式参数 → 环境变量 → TOML 文件。环境前缀 `MCP_`，嵌套分隔符 `__`。
 TOML 路径由 `MCP_ENV` 决定 → `configs/config.{env}.toml`（git 忽略，首次启动自动生成）。
 无配置时默认 SQLite 内存 + Redis。
+
+### 日志输出与迁移脚本
+- 控制台日志按 `sys.stdout.isatty()` 分档：交互终端用 rich，重定向到文件/管道时改一行一条纯文本
+  （rich 的折行与边框会让日志没法 grep）。`configure_logging` 只清 root 的处理器，管不到 FastMCP
+  自己那个 logger，故 `server.py` 启动时对 `"fastmcp"` 补调一次 `utils/log.demote_console_rendering()`。
+- 迁移脚本共享 `scripts/_migration_common.py`（新增脚本从这里 import，别复制实现）；
+  打印连接串一律 `masked_url(url)`——只遮口令，方言/用户/主机/库名保留；
+  `tests/test_migrate_url_masking.py` 会把 `scripts/*.py` 里裸着打 `{url}` 的 print 判红
+  （预演是只读动作，输出最容易被截图转发）。
 
 ### 测试约定
 - 全部测试用内存 SQLite（`sqlite+aiosqlite:///:memory:`）；默认无需外部服务
@@ -202,7 +223,9 @@ cd docker && docker compose up -d
    `_ORPHAN_REGISTRY`、`FIELD_MAPPING_CONFIG`
 5. `crud_factory._ENTITIES` 一行 + `query_tools.py` 列表/搜索工具
 6. `utils/enums.py`：`EntityType` / `AuthResource` / 领域枚举
-7. `auth/discovery.py`：`get_entity_metadata` 模型表
+7. `auth/discovery.py`：`get_entity_metadata` 模型表；**新工具模块要加进 `_TOOL_MODULES`**
+   （漏登记 = 它的码不进 `/permissions`）；带 `data_scope` 列且要把平台档下放给非超管的实体，
+   在 `handlers/ownership.GOVERNANCE_RESOURCES` 按表名登记资源码
 8. mock `TABLE_META` + tests seeded fixtures
 
 ## 风格说明

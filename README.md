@@ -97,7 +97,7 @@ service_mcp/
 configs/               # config.example.toml skeleton (per-env TOMLs are git-ignored)
 docker/                # compose files, entrypoint, ctl.sh/ctl.ps1
 mock/                  # mock_product_data.py
-scripts/               # rename_project.py, refresh_project_stub.py, migrate_example.py
+scripts/               # rename_project.py, refresh_project_stub.py, migrate_example.py, _migration_common.py
 tests/                 # pytest suite (in-memory SQLite)
 ```
 
