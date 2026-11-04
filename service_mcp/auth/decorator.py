@@ -18,14 +18,34 @@ def _auth_context_missing_response() -> UtilResponse:
     )
 
 
+#: 权限码前缀（改名脚本按 --perm-prefix 重写这一处字面量）
+PERM_PREFIX = "SM_"
+#: 系统位：码结构为 `{前缀}{系统位}{资源码}{操作码}`，一个服务占一枚系统位
+PERM_SYSTEM = "01"
+
+
+def build_perm_code(resource: str, action: str) -> str:
+    """按权限码格式拼装完整码。
+
+    装饰器与写侧的治理判据共用这一份格式：前缀只落在 `PERM_PREFIX` 一处，
+    判据侧不再抄第二串码字面量，两处不会分叉。
+
+    Args:
+        resource: 资源码（两位，见 ``AuthResource``）。
+        action: 操作码（两位，见 ``AuthAction``）。
+    """
+    return f"{PERM_PREFIX}{PERM_SYSTEM}{resource}{action}"
+
+
 def mcp_perm(resource: str, action: str):
     """声明工具的资源码 + 操作码，自动拼装 SM_ 权限码并做运行时校验。
 
     Args:
         resource: 资源码 (01=产品, 02=产品价格, 07=配置, 08=审计)
-        action:   操作码 (01=list, 02=detail, 03=create, 04=update, 06=delete, 07=manage, 08=read)
+        action:   操作码 (01=list, 02=detail, 03=create, 04=update, 06=delete,
+                  07=manage, 08=read, 09=govern)
     """
-    perm_code = f"SM_01{resource}{action}"
+    perm_code = build_perm_code(resource, action)
 
     def decorator(func):
         func._mcp_perm_code = perm_code

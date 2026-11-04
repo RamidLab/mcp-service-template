@@ -216,6 +216,13 @@ class AuthAction(BaseEnum):
     Delete = "06", "删除"
     Manage = "07", "管理"
     Read = "08", "查看"
+    # 治理＝改归属/发布列（data_scope/team_id/owner_id/publish_status）与平台档写入。
+    # 与"修改"分码是刻意的：普通字段可写不等于有权把行挪到他人名下或升档，
+    # 二者必须能各自授予、各自回收。
+    # 这格成员是必需的，不是装饰：auth/discovery 的 _make_name 用 from_value 查表，
+    # 查不到时 getattr(None, "label", "未定义") 兜底——码照旧下发，但清单里那枚名字
+    # 静默变成"××未定义"，下游 RBAC 原样收下。
+    Govern = "09", "治理"
 
 
 class NodeStatus(BaseEnum):

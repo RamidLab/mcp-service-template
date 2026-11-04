@@ -17,6 +17,12 @@
   `scripts/rename_project.py` 默认 dry-run、加 `--write` 才落盘，SKIP_FILES 包含脚本自身；
   `pyproject.toml` 移除未使用的 `booktype`，redis 约束对齐家族写法。
 
+### Fixed
+
+- **权限发现补登记导出工具模块**（[`auth/discovery.py`](service_mcp/auth/discovery.py)）：`get_all_permissions`
+  只扫手写的 `_TOOL_MODULES`，`export_tools` 漏在里面——工具照旧能用、超管照旧能调，但它声明的
+  权限码永远不进 `/permissions`，后端 RBAC 里就没有这一行，除超管以外的人一个都拿不到。
+
 ### Security
 
 - **写侧接上读侧同一份三级可见性**（[`handlers/base_handlers.py`](service_mcp/handlers/base_handlers.py)）：
@@ -30,6 +36,18 @@
   仍需显式表态；`current_team_id()` 从死代码接进写侧。无鉴权上下文（tool 模式/后台任务）口径不变，
   示例域模型不带归属列因此不受影响。新增 [`tests/test_write_scope.py`](tests/test_write_scope.py) 钉住
   越权被拒、本人放行、tool 模式全量、归属注入四条口径。
+- **归属档位落点强制**（[`handlers/ownership.py`](service_mcp/handlers/ownership.py)）：上一条保留了调用方
+  送来的任何 `data_scope` 值，于是任何登录用户写 `data_scope="platform"` 就能把行落进全员共享档。
+  现在新增路径在归属注入之后统一过四条判据——档位值只认 `DataScope` 词表（档位列是裸字符串、无 CHECK
+  约束，读侧只认字面量，放过不认识的值就是"写得进、谁都读不到"）、落 `platform` 需该实体的治理权限码、
+  `personal` 的 `owner_id` 只能是调用者本人、`team` 的 `team_id` 只能是 `ctx.team_ids` 里的部门
+  （跨部门落档要治理码，读侧"看得见全部部门"不算授权）。治理码不写死字面量：
+  `handlers/ownership.GOVERNANCE_RESOURCES` 按表名登记**资源码**，完整码经
+  `auth.decorator.build_perm_code` 现拼（前缀由那一处持有，`@mcp_perm` 与判据同源不分叉），
+  登记的码一并随 `/permissions` 下发——RBAC 只灌那一枚清单，不下发就没人能被授予。
+  实体未登记时平台档只剩超管写得（fail-closed，宁可挡住也不给一把不存在的码放行）；
+  无鉴权上下文与不带 `data_scope` 列的模型口径不变。新增/批量新增的业务拒绝改为按自带错误码返回
+  （`TOOL_INVALID_PARAMS` / `AUTH_INSUFFICIENT_SCOPE`），不再一律塌成 `FAIL`。
 
 ## [0.3.0] - 2026-09-18
 

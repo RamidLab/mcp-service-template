@@ -5,7 +5,8 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError, OperationalError
 
-from service_mcp.error.exceptions import UniqueConflictError
+from service_mcp.error.exceptions import ToolError, UniqueConflictError
+from service_mcp.handlers import ownership
 from service_mcp.handlers.base_handlers import CodeResolveMixin, _get_mgr
 from service_mcp.models.common import UtilResponse
 from service_mcp.models.orm import ProductPrice
@@ -150,7 +151,8 @@ class AddHandler(CodeResolveMixin):
 
         口径：
           - 模型没有 ``data_scope`` 列 → 原样返回（模板示例域不受影响）
-          - 调用方已表态 ``data_scope`` → 保留（平台档必须由显式表态产生，不默认给）
+          - 调用方已表态 ``data_scope`` → 本段保留（平台档必须由显式表态产生，不默认给）；
+            表态合不合法不在这里判，由紧随其后的 ``ownership.assert_add_allowed`` 收口
           - 未表态 → ``personal`` + ``owner_id`` 取当前用户
           - ``team`` 档未带 ``team_id`` → 取当前用户自属部门；无部门则只告警、不臆造，
             档位保持不变（宁可少给归属，也不把数据塞进猜出来的部门）
@@ -198,7 +200,7 @@ class AddHandler(CodeResolveMixin):
         data_list: list[BaseModel],
         db_name: str,
     ) -> list[dict[str, Any]]:
-        """批量预处理：唯一性校验 → 解析外键 → 名称兜底 → 日期转换。
+        """批量预处理：唯一性校验 → 解析外键 → 名称兜底 → 日期转换 → 归属注入 → 档位判据。
 
         Args:
             orm_model: 目标 ORM 模型类。
@@ -211,6 +213,7 @@ class AddHandler(CodeResolveMixin):
         Raises:
             ValueError: 唯一性冲突（来自 _check_own_codes_unique）
             ValueError: 外键/名称解析失败（来自 _resolve_fk_codes / _resolve_names）
+            ToolError: 档位值不合法或归属落点越权（来自 ownership.assert_add_allowed，整批拒绝）
         """
         raws = [d.model_dump() for d in data_list]
         # 阶段 1：唯一性校验（独立错误码）
@@ -220,6 +223,8 @@ class AddHandler(CodeResolveMixin):
         raws = await self._resolve_names(raws, db_name)
         raws = self._conv_date_fields(raws)
         raws = self._stamp_ownership(orm_model, raws)
+        # 档位落点强制（在归属注入之后：那时档位/归属列才是本批将要落库的真值）
+        await ownership.assert_add_allowed(orm_model, raws)
         return raws
 
     async def _insert_single(
@@ -272,6 +277,9 @@ class AddHandler(CodeResolveMixin):
             raws = await self._prepare_records(orm_model, [data], db_name)
         except UniqueConflictError as e:
             return UtilResponse(code=Errcode.UNIQUE_CONFLICT, message=str(e), data={"id": None})
+        except ToolError as e:
+            # 业务可预期失败（非法档位值/归属越权/关联未找到）按自带错误码返回，不塌成 FAIL
+            return UtilResponse(code=e.code, message=str(e), data={"id": None})
         except Exception as e:
             return UtilResponse(code=Errcode.FAIL, message=str(e), data={"id": None})
         return await self._insert_single(orm_model, raws[0], db_name)
@@ -294,6 +302,18 @@ class AddHandler(CodeResolveMixin):
 
         try:
             raws = await self._prepare_records(orm_model, data_list, db_name)
+        except ToolError as e:
+            # 整批业务拒绝（非法档位值/归属越权/关联未找到）：按自带错误码返回，全部计为失败
+            return UtilResponse(
+                code=e.code,
+                message=str(e),
+                data={
+                    "success_count": 0,
+                    "fail_count": total,
+                    "ids": [],
+                    "failures": [{"index": 0, "key": {}, "error": str(e)}],
+                },
+            )
         except Exception as e:
             code = Errcode.UNIQUE_CONFLICT if isinstance(e, UniqueConflictError) else Errcode.FAIL
             return UtilResponse(

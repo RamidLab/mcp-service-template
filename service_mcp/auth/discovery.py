@@ -12,16 +12,21 @@ from service_mcp.tools import (
     basic_tools,
     crud_tools,
     dict_tools,
+    export_tools,
     query_tools,
 )
 from service_mcp.utils.enums import AuthAction, AuthResource
 
 
+#: 权限发现的扫描范围：工具包里**声明过权限码**的模块都必须列在这里（漏登记不会报错，
+#: 只是那枚码永远不进 /permissions，RBAC 里也就没有这一行——除超管以外没人能被授予）。
+#: 这条不变量由 ``tests/test_auth_discovery.py`` 逐模块扫工具包把守。
 _TOOL_MODULES = [
     query_tools,
     crud_tools,
     basic_tools,
     dict_tools,
+    export_tools,
 ]
 
 
@@ -35,6 +40,10 @@ def _make_name(resource: str, action: str) -> str:
 
 def get_all_permissions() -> list[dict]:
     """返回 service-mcp 所有权限码清单。
+
+    两个来源：工具函数上的 ``@mcp_perm`` 声明，以及归属治理注册表里登记的实体
+    （治理码没有对应的工具承载，但写侧判据要按它放行——不随 /permissions 下发的话
+    RBAC 里就没有这一行，除超管以外没人能被授予）。
 
     Returns:
         [{"code": "SM_010101", "name": "产品列表", "resource": "01", "action": "01"}, ...]
@@ -56,6 +65,21 @@ def get_all_permissions() -> list[dict]:
                         "resource": resource,
                         "action": action,
                     }
+
+    # 归属治理码：按登记的实体资源码现拼（前缀仍只有 decorator 那一处）
+    from service_mcp.auth.decorator import build_perm_code
+    from service_mcp.handlers.ownership import GOVERNANCE_RESOURCES  # 延迟导入避免循环引用
+
+    for resource in GOVERNANCE_RESOURCES.values():
+        code = build_perm_code(resource, AuthAction.Govern.value)
+        if code not in seen:
+            seen[code] = {
+                "code": code,
+                "name": _make_name(resource, AuthAction.Govern.value),
+                "resource": resource,
+                "action": AuthAction.Govern.value,
+            }
+
     return sorted(seen.values(), key=lambda p: p["code"])
 
 
