@@ -20,6 +20,7 @@ from typing import Any, cast
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from _migration_common import masked_url
 from sqlalchemy import inspect, text
 
 from service_mcp.db.core import DBManager
@@ -138,7 +139,7 @@ async def migrate(url: str) -> None:
     await mgr.connect()
     m = Migration(mgr, url)
     db_label = "SQLite" if m.is_sqlite else "PostgreSQL"
-    print(f"[migrate] 数据库: {db_label}  ({url})\n")
+    print(f"[migrate] 数据库: {db_label}  ({masked_url(url)})\n")
 
     # 1. product 表（老库缺失时兜底创建；正常情况由 ORM create_all() 创建）
     print("[migrate] 检查 product ...")

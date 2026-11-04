@@ -24,6 +24,11 @@
   现在 `configure_logging` 按 `sys.stdout.isatty()` 选处理器（交互终端照旧 rich），并新增
   `demote_console_rendering()`——`configure_logging` 只清 root 的处理器，管不到 FastMCP 那个 logger
   自带的那一路，[`server.py`](service_mcp/server.py) 启动时对它补一次替换，交互终端上行为不变。
+- **迁移脚本的数据库连接串只报掩码后的口令位**（[`scripts/_migration_common.py`](scripts/_migration_common.py)）：
+  预演是**只读**动作，正因为它只读，人才会放松地去截屏、贴日志、转进会话记录，而脚本头一行原来打成
+  原文 DSN。现在统一走 `masked_url`：**只遮口令**，方言/用户/主机/库名照旧保留（那是运维判断
+  "我连的是哪台库"所需的信息）；另加一条扫源用例，把 `scripts/*.py` 里任何把 `{url}` 裸着打进
+  print 的行判红，免得只修这次跑到的那一个脚本。
 - **权限发现补登记导出工具模块**（[`auth/discovery.py`](service_mcp/auth/discovery.py)）：`get_all_permissions`
   只扫手写的 `_TOOL_MODULES`，`export_tools` 漏在里面——工具照旧能用、超管照旧能调，但它声明的
   权限码永远不进 `/permissions`，后端 RBAC 里就没有这一行，除超管以外的人一个都拿不到。
